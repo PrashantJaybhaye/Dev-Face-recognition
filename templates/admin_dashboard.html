@@ -56,11 +56,11 @@
                 <p>Check daily attendance entry and exit logs per student.</p>
             </button>
 
-            <button class="dash-card primary" onclick="window.location.href='/export_pdf'"
+            <button class="dash-card primary" onclick="openModal('exportModal')"
                 style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📊</div>
                 <h3>Export Reports</h3>
-                <p>Generate and download comprehensive attendance PDFs.</p>
+                <p>Generate filtered attendance PDFs and CSV spreadsheets.</p>
             </button>
 
             <button class="dash-card danger" onclick="window.location.href='/'"
@@ -124,7 +124,40 @@
         </div>
     </div>
 
-    <!-- Check Modal -->
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Export Attendance Reports</h2>
+                <button class="modal-close" onclick="closeModal('exportModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px;">
+                    Select filters to customize your report. Leave fields blank to export all data.
+                </p>
+
+                <div class="form-group">
+                    <label>Specific Roll Number (Optional)</label>
+                    <input type="number" id="exportRoll" placeholder="e.g. 101">
+                </div>
+
+
+
+                <div class="form-group">
+                    <label>Export Format</label>
+                    <select id="exportFormat"
+                        style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; background: var(--bg-main);">
+                        <option value="pdf">Professional PDF Report</option>
+                        <option value="csv">Data Spreadsheet (CSV)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 12px;">
+                <button class="btn btn-outline" style="flex: 1;" onclick="closeModal('exportModal')">Cancel</button>
+                <button class="btn btn-primary" style="flex: 2;" onclick="runExport()">Download Report</button>
+            </div>
+        </div>
+    </div>
     <div id="checkModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -448,6 +481,17 @@
                     }
                 })
                 .catch(() => alert('Network error performing manual logout.'));
+        }
+
+        function runExport() {
+            const roll = document.getElementById('exportRoll').value;
+            const format = document.getElementById('exportFormat').value;
+
+            let url = `/export_report?format=${format}`;
+            if (roll) url += `&roll_number=${roll}`;
+
+            window.location.href = url;
+            closeModal('exportModal');
         }
 
         // Helper func to inject a status node dynamically under an input

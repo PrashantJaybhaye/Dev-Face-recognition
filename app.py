@@ -7,6 +7,7 @@ import sqlite3
 import datetime
 import time
 import base64
+import csv
 from deepface import DeepFace
 import warnings
 warnings.filterwarnings('ignore')
@@ -719,133 +720,207 @@ def delete_student():
         return jsonify({'success': False, 'message': 'Internal error occurred'})
 
 
-@app.route('/export_pdf')
-def export_pdf():
+from flask import make_response
+
+@app.route('/export_report')
+def export_report():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_login_page'))
     
-    temp_pdf_fd, pdf_file = tempfile.mkstemp(suffix='.pdf')
-    os.close(temp_pdf_fd)
-    
-    document = SimpleDocTemplate(pdf_file, pagesize=letter)
-    elements = []
-    
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        spaceAfter=30,
-        alignment=1,
-        textColor=colors.darkblue
-    )
-    
-    title = Paragraph("Face Recognition Attendance System Report", title_style)
-    elements.append(title)
-    
-    current_date = datetime.datetime.now().strftime("%B %d, %Y at %I:%M %p")
-    date_style = ParagraphStyle('DateStyle', parent=styles['Normal'], fontSize=12, alignment=1, spaceAfter=20)
-    date_para = Paragraph(f"Generated on: {current_date}", date_style)
-    elements.append(date_para)
-    elements.append(Spacer(1, 20))
+    roll_number = request.args.get('roll_number')
+    export_format = request.args.get('format', 'pdf')
     
     conn = sqlite3.connect('studentss.db')
     c = conn.cursor()
-    c.execute("SELECT name, department, roll_number FROM students")
-    students = c.fetchall()
     
-    for student_index, student in enumerate(students):
-        name, department, roll_number = student
+    query = """
+        SELECT s.name, s.department, s.roll_number, a.login_time, a.logout_time 
+        FROM attendance a 
+        JOIN students s ON a.roll_number = s.roll_number
+        WHERE 1=1
+    """
+    params = []
+    
+    if roll_number:
+        query += " AND s.roll_number = ?"
+        params.append(roll_number)
+    
+
         
-        student_style = ParagraphStyle(
-            'StudentHeader',
-            parent=styles['Heading2'],
-            fontSize=16,
-            spaceAfter=10,
-            textColor=colors.darkgreen
-        )
+    query += " ORDER BY s.name ASC, a.login_time DESC"
+    
+    c.execute(query, params)
+    all_records = c.fetchall()
+    conn.close()
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    if export_format == 'csv':
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Student Name', 'Department', 'Roll Number', 'Login Time', 'Logout Time', 'Duration'])
         
-        student_header = Paragraph(f"{name} (Roll: {roll_number}) - {department} Department", student_style)
-        elements.append(student_header)
-        
-        c.execute("""
-            SELECT login_time, logout_time 
-            FROM attendance 
-            WHERE roll_number = ? 
-            ORDER BY login_time DESC
-        """, (roll_number,))
-        attendance_records = c.fetchall()
-        
-        if attendance_records:
-            attendance_data = [["Date", "Day", "Login Time", "Logout Time", "Duration"]]
+        for name, dept, roll, login, logout in all_records:
+            duration_str = "N/A"
+            if login and logout:
+                login_dt = datetime.datetime.strptime(login, "%Y-%m-%d %H:%M:%S")
+                logout_dt = datetime.datetime.strptime(logout, "%Y-%m-%d %H:%M:%S")
+                duration = logout_dt - login_dt
+                duration_str = str(duration).split('.')[0]
             
-            for login_time_str, logout_time_str in attendance_records:
-                login_dt = datetime.datetime.strptime(login_time_str, "%Y-%m-%d %H:%M:%S")
-                date_str = login_dt.strftime("%b %d, %Y")
-                day_str = login_dt.strftime("%A")
-                login_display = login_dt.strftime("%I:%M %p")
+            writer.writerow([name, dept, roll, login, logout or 'Active', duration_str])
+            
+        output.seek(0)
+        response = make_response(send_file(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'Attendance_Report_{timestamp}.csv'
+        ))
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    # PDF Generation
+    temp_pdf_fd, pdf_file = tempfile.mkstemp(suffix='.pdf')
+    os.close(temp_pdf_fd)
+    
+    document = SimpleDocTemplate(pdf_file, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elements = []
+    
+    styles = getSampleStyleSheet()
+    
+    # Custom Styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=26,
+        spaceAfter=15,
+        alignment=1,
+        textColor=colors.HexColor("#1e293b")
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'Subtitle',
+        parent=styles['Normal'],
+        fontSize=12,
+        alignment=1,
+        spaceAfter=30,
+        textColor=colors.HexColor("#64748b")
+    )
+    
+    header_style = ParagraphStyle(
+        'HeaderStyle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceBefore=20,
+        spaceAfter=10,
+        textColor=colors.HexColor("#2563eb"),
+        borderPadding=5
+    )
+    
+    # Header
+    elements.append(Paragraph("Biometric Attendance Report", title_style))
+    
+    filter_desc = "Complete System Logs"
+    if roll_number:
+        filter_desc = f"Report for Roll #{roll_number}"
+
+        
+    elements.append(Paragraph(filter_desc, subtitle_style))
+    elements.append(Paragraph(f"Generated on: {datetime.datetime.now().strftime('%B %d, %Y at %I:%M %p')}", subtitle_style))
+    elements.append(Spacer(1, 10))
+    
+    # Group by student
+    report_data = {}
+    for name, dept, roll, login, logout in all_records:
+        key = (name, dept, roll)
+        if key not in report_data:
+            report_data[key] = []
+        report_data[key].append((login, logout))
+    
+    if not report_data:
+        elements.append(Paragraph("No records matching the selected criteria.", styles['Normal']))
+    else:
+        for (name, dept, roll), actions in report_data.items():
+            elements.append(Paragraph(f"{name} (Roll: {roll}) - {dept}", header_style))
+            
+            table_data = [["Date", "Time In", "Time Out", "Duration"]]
+            
+            total_seconds = 0
+            sessions_count = 0
+            
+            for login_str, logout_str in actions:
+                login_dt = datetime.datetime.strptime(login_str, "%Y-%m-%d %H:%M:%S")
+                date_str = login_dt.strftime("%b %d, %Y (%a)")
+                login_time = login_dt.strftime("%I:%M %p")
                 
-                if logout_time_str:
-                    logout_dt = datetime.datetime.strptime(logout_time_str, "%Y-%m-%d %H:%M:%S")
-                    logout_display = logout_dt.strftime("%I:%M %p")
+                if logout_str:
+                    logout_dt = datetime.datetime.strptime(logout_str, "%Y-%m-%d %H:%M:%S")
+                    logout_time = logout_dt.strftime("%I:%M %p")
                     duration = logout_dt - login_dt
-                    duration_hours = duration.total_seconds() / 3600
-                    if duration_hours < 1:
-                        duration_str = f"{int(duration.total_seconds() / 60)} min"
-                    else:
-                        hours = int(duration_hours)
-                        minutes = int((duration_hours - hours) * 60)
-                        duration_str = f"{hours}h {minutes}m"
+                    diff_sec = duration.total_seconds()
+                    total_seconds += diff_sec
+                    sessions_count += 1
+                    
+                    hours = int(diff_sec // 3600)
+                    minutes = int((diff_sec % 3600) // 60)
+                    duration_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
                 else:
-                    logout_display = "Not logged out"
-                    duration_str = "N/A"
+                    logout_time = "Active"
+                    duration_str = "--"
                 
-                attendance_data.append([date_str, day_str, login_display, logout_display, duration_str])
+                table_data.append([date_str, login_time, logout_time, duration_str])
             
-            attendance_table = Table(attendance_data, colWidths=[1.5*inch, 1*inch, 1*inch, 1*inch, 1*inch])
-            attendance_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            # Create Table
+            t = Table(table_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.2*inch])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#475569")),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
                 ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
             ]))
+            elements.append(t)
             
-            elements.append(attendance_table)
+            # Summary for student
+            if sessions_count > 0:
+                avg_sec = total_seconds / sessions_count
+                avg_h = int(avg_sec // 3600)
+                avg_m = int((avg_sec % 3600) // 60)
+                summary_text = f"<b>Sessions:</b> {sessions_count} | <b>Average Duration:</b> {avg_h}h {avg_m}m"
+                elements.append(Spacer(1, 5))
+                elements.append(Paragraph(summary_text, ParagraphStyle('Summary', parent=styles['Normal'], fontSize=8, alignment=2)))
+            
             elements.append(Spacer(1, 20))
-        else:
-            no_data_style = ParagraphStyle('NoData', parent=styles['Normal'], fontSize=10, spaceAfter=20, leftIndent=20, textColor=colors.red)
-            no_data = Paragraph("No attendance records found.", no_data_style)
-            elements.append(no_data)
-        
-        if student_index < len(students) - 1:
-            elements.append(Spacer(1, 30))
-    
-    conn.close()
+            
     document.build(elements)
     
     with open(pdf_file, 'rb') as f:
         pdf_data = f.read()
         
     if os.path.exists(pdf_file):
-        try:
-            os.remove(pdf_file)
-        except Exception:
-            pass
+        try: os.remove(pdf_file)
+        except: pass
             
-    # using download_name instead of attachment_filename for modern flask 
-    response = send_file(
+    response = make_response(send_file(
         io.BytesIO(pdf_data),
         mimetype='application/pdf',
         as_attachment=True,
-        download_name='attendance_report.pdf'
-    )
+        download_name=f'Attendance_Report_{timestamp}.pdf'
+    ))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
+
 
 
 @app.route('/student_check_attendance', methods=['POST'])
