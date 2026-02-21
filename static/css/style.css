@@ -227,6 +227,12 @@ body {
   background: var(--bg-main);
 }
 
+.dash-card .icon-wrapper svg {
+  width: 28px;
+  height: 28px;
+  stroke-width: 2;
+}
+
 .dash-card.primary .icon-wrapper {
   background: rgba(37, 99, 235, 0.1);
   color: var(--primary);

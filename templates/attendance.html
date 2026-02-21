@@ -7,6 +7,7 @@
     <title>Mark Attendance - FRAS</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         .camera-section {
             position: relative;
@@ -114,11 +115,13 @@
             {% if session.get('admin_logged_in') %}
             <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
                 onclick="window.location.href='/admin_dashboard'">
+                <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
                 Return to Dashboard
             </button>
             {% else %}
             <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
                 onclick="window.location.href='/student_dashboard'">
+                <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
                 Return to Portal
             </button>
             {% endif %}
@@ -279,6 +282,7 @@
         }
 
         startCamera();
+        lucide.createIcons();
     </script>
 </body>
 

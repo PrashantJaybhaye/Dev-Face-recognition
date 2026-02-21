@@ -7,6 +7,7 @@
     <title>Student Dashboard - FRAS</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
@@ -15,6 +16,7 @@
         <div class="header-actions">
             <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
                 onclick="window.location.href='/student_logout'">
+                <i data-lucide="log-out" style="width: 16px; height: 16px;"></i>
                 Sign Out
             </button>
         </div>
@@ -34,28 +36,28 @@
         <div class="dashboard-grid">
             <button class="dash-card success" onclick="window.location.href='/attendance'"
                 style="width: 100%; border: none; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">📸</div>
+                <div class="icon-wrapper"><i data-lucide="camera"></i></div>
                 <h3>Mark Attendance</h3>
                 <p>Register your presence through face recognition scan.</p>
             </button>
 
             <button class="dash-card primary" onclick="viewAttendance()"
                 style="width: 100%; border: none; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">📋</div>
+                <div class="icon-wrapper"><i data-lucide="history"></i></div>
                 <h3>View History</h3>
                 <p>Track your past and active attendance records instantly.</p>
             </button>
 
             <button class="dash-card danger" onclick="retakePhotos()"
                 style="width: 100%; border: none; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">🔄</div>
+                <div class="icon-wrapper"><i data-lucide="user-cog"></i></div>
                 <h3>Profile Update</h3>
                 <p>Retake face sample images when requested by admin.</p>
             </button>
 
             <button class="dash-card secondary" onclick="window.location.href='/'"
                 style="width: 100%; border: none; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">🚪</div>
+                <div class="icon-wrapper"><i data-lucide="home"></i></div>
                 <h3>Return Home</h3>
                 <p>Navigate back to the main login prompt securely.</p>
             </button>
@@ -139,6 +141,7 @@
         function closeModal(id) {
             document.getElementById(id).classList.remove('active');
         }
+        lucide.createIcons();
     </script>
 </body>
 

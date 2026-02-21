@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <meta name="csrf-token" content="{{ csrf_token() if csrf_token else 'MISSING_CSRF_TOKEN' }}">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
@@ -16,6 +17,7 @@
         <div class="header-actions">
             <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
                 onclick="window.location.href='/logout'">
+                <i data-lucide="log-out" style="width: 16px; height: 16px;"></i>
                 Sign Out
             </button>
         </div>
@@ -30,42 +32,42 @@
         <div class="dashboard-grid">
             <button class="dash-card success" onclick="window.location.href='/register'"
                 style="width: 100%; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">📸</div>
+                <div class="icon-wrapper"><i data-lucide="user-plus"></i></div>
                 <h3>Register Student</h3>
                 <p>Add a new student profile and face data to the system.</p>
             </button>
 
             <button class="dash-card primary" onclick="openModal('editModal'); listStudents();"
                 style="width: 100%; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">✏️</div>
+                <div class="icon-wrapper"><i data-lucide="edit-3"></i></div>
                 <h3>Edit Records</h3>
                 <p>Add, update, or remove student profiles from the system database.</p>
             </button>
 
             <button class="dash-card primary" onclick="window.location.href='/attendance'"
                 style="width: 100%; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">📹</div>
+                <div class="icon-wrapper"><i data-lucide="video"></i></div>
                 <h3>Mark Attendance</h3>
                 <p>Launch the real-time face recognition attendance scanner.</p>
             </button>
 
             <button class="dash-card primary" onclick="openModal('checkModal'); checkAttendance();"
                 style="width: 100%; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">📋</div>
+                <div class="icon-wrapper"><i data-lucide="clipboard-list"></i></div>
                 <h3>View Logs</h3>
                 <p>Check daily attendance entry and exit logs per student.</p>
             </button>
 
             <button class="dash-card primary" onclick="openModal('exportModal')"
                 style="width: 100%; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">📊</div>
+                <div class="icon-wrapper"><i data-lucide="bar-chart-3"></i></div>
                 <h3>Export Reports</h3>
                 <p>Generate filtered attendance PDFs and CSV spreadsheets.</p>
             </button>
 
             <button class="dash-card danger" onclick="window.location.href='/'"
                 style="width: 100%; text-align: center; font-family: inherit;">
-                <div class="icon-wrapper">🚪</div>
+                <div class="icon-wrapper"><i data-lucide="log-out"></i></div>
                 <h3>Close Panel</h3>
                 <p>Return to the main landing page directly.</p>
             </button>
@@ -505,6 +507,7 @@
             document.getElementById(targetId).parentNode.appendChild(p);
             return p;
         }
+        lucide.createIcons();
     </script>
 </body>
 

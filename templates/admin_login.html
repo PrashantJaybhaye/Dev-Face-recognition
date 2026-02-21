@@ -7,6 +7,7 @@
     <title>Administrator Login - FRAS</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
@@ -35,6 +36,7 @@
 
             <div style="margin-top: 12px;">
                 <button class="btn btn-outline" onclick="window.location.href='/'">
+                    <i data-lucide="home" style="width: 16px; height: 16px;"></i>
                     Return to Home
                 </button>
             </div>
@@ -86,6 +88,7 @@
         document.getElementById('password').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') login();
         });
+        lucide.createIcons();
     </script>
 </body>
 
