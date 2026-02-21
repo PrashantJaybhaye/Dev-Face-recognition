@@ -87,22 +87,22 @@
 
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
                 <div class="form-group">
-                    <label>Student Name</label>
+                    <label for="studentName">Student Name</label>
                     <input type="text" id="studentName" placeholder="Enter student name">
                 </div>
 
                 <div class="form-group">
-                    <label>Roll Number</label>
-                    <input type="number" id="rollNumber" placeholder="Enter roll number">
+                    <label for="rollNumber">Roll Number</label>
+                    <input type="text" id="rollNumber" placeholder="Enter roll number">
                 </div>
 
                 <div class="form-group">
-                    <label>Department</label>
+                    <label for="department">Department</label>
                     <input type="text" id="department" placeholder="Enter department">
                 </div>
 
                 <div class="form-group">
-                    <label>Address</label>
+                    <label for="address">Address</label>
                     <input type="text" id="address" placeholder="Enter address">
                 </div>
             </div>
@@ -147,6 +147,18 @@
             }
         }
 
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+                const video = document.getElementById('video');
+                if (video) video.srcObject = null;
+            }
+        }
+
+        window.addEventListener('beforeunload', stopCamera);
+        document.addEventListener('visibilitychange', () => { if (document.hidden) stopCamera(); else startCamera(); });
+
         function capturePhoto() {
             if (capturedPhotos.length >= maxPhotos) {
                 alert('Maximum 5 photos already captured!');
@@ -159,7 +171,11 @@
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
+            ctx.save();
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
 
             const imageData = canvas.toDataURL('image/jpeg');
             capturedPhotos.push(imageData);
@@ -201,6 +217,9 @@
             status.textContent = 'Processing registration...';
             status.className = 'status';
 
+            const submitBtn = document.querySelector('button[onclick="submitRegistration()"]');
+            if (submitBtn) submitBtn.disabled = true;
+
             fetch('/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -212,20 +231,23 @@
                     images: capturedPhotos
                 })
             })
-                .then(r => r.json())
+                .then(r => r.ok ? r.json().catch(() => r.text().then(t => ({ success: false, message: t }))) : r.text().then(t => { try { return JSON.parse(t); } catch (e) { return { success: false, message: t } } }))
                 .then(data => {
                     if (data.success) {
                         status.textContent = 'Registration successful!';
                         status.className = 'status success';
+                        stopCamera();
                         setTimeout(() => window.location.href = '/admin_dashboard', 1500);
                     } else {
                         status.textContent = data.message || 'Registration failed.';
                         status.className = 'status error';
+                        if (submitBtn) submitBtn.disabled = false;
                     }
                 })
                 .catch(err => {
                     status.textContent = 'Error: ' + err.message;
                     status.className = 'status error';
+                    if (submitBtn) submitBtn.disabled = false;
                 });
         }
 

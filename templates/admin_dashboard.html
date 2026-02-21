@@ -7,6 +7,7 @@
     <title>Admin Dashboard - FRAS</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta name="csrf-token" content="{{ csrf_token() if csrf_token else 'MISSING_CSRF_TOKEN' }}">
 </head>
 
 <body>
@@ -27,41 +28,47 @@
         </div>
 
         <div class="dashboard-grid">
-            <div class="dash-card success" onclick="window.location.href='/register'">
+            <button class="dash-card success" onclick="window.location.href='/register'"
+                style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📸</div>
                 <h3>Register Student</h3>
                 <p>Add a new student profile and face data to the system.</p>
-            </div>
+            </button>
 
-            <div class="dash-card primary" onclick="openModal('editModal')">
+            <button class="dash-card primary" onclick="openModal('editModal')"
+                style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">✏️</div>
                 <h3>Edit Records</h3>
                 <p>Modify existing student details such as address or department.</p>
-            </div>
+            </button>
 
-            <div class="dash-card primary" onclick="window.location.href='/attendance'">
+            <button class="dash-card primary" onclick="window.location.href='/attendance'"
+                style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📹</div>
                 <h3>Mark Attendance</h3>
                 <p>Launch the real-time face recognition attendance scanner.</p>
-            </div>
+            </button>
 
-            <div class="dash-card primary" onclick="openModal('checkModal')">
+            <button class="dash-card primary" onclick="openModal('checkModal')"
+                style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📋</div>
                 <h3>View Logs</h3>
                 <p>Check daily attendance entry and exit logs per student.</p>
-            </div>
+            </button>
 
-            <div class="dash-card primary" onclick="window.location.href='/export_pdf'">
+            <button class="dash-card primary" onclick="window.location.href='/export_pdf'"
+                style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📊</div>
                 <h3>Export Reports</h3>
                 <p>Generate and download comprehensive attendance PDFs.</p>
-            </div>
+            </button>
 
-            <div class="dash-card danger" onclick="window.location.href='/'">
+            <button class="dash-card danger" onclick="window.location.href='/'"
+                style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">🚪</div>
                 <h3>Close Panel</h3>
                 <p>Return to the main landing page directly.</p>
-            </div>
+            </button>
         </div>
     </main>
 
@@ -127,6 +134,17 @@
     </div>
 
     <script>
+        const getCsrfToken = () => {
+            const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+            return tokenMeta ? tokenMeta.getAttribute('content') : '';
+        };
+
+        const escapeHtml = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        };
+
         function openModal(id) { document.getElementById(id).classList.add('active'); }
 
         function closeModal(id) {
@@ -157,7 +175,7 @@
             statusNode.textContent = 'Fetching details...';
             statusNode.className = 'status';
 
-            fetch('/get_student/' + roll)
+            fetch('/get_student/' + encodeURIComponent(roll))
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
@@ -184,13 +202,16 @@
             const name = document.getElementById('editName').value;
             const dept = document.getElementById('editDept').value;
             const address = document.getElementById('editAddress').value;
-            const statusNode = document.getElementById('editStatus');
+            const statusNode = document.getElementById('editStatus') || createStatusNode('editRoll');
 
             statusNode.textContent = 'Saving changes...';
             statusNode.className = 'status';
 
             fetch('/edit_student', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
                 body: JSON.stringify({ roll_number: roll, name: name, department: dept, address: address })
             })
                 .then(r => r.json())
@@ -223,7 +244,10 @@
             resultDiv.innerHTML = '<p class="status">Loading records...</p>';
 
             fetch('/check_attendance', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
                 body: JSON.stringify({ roll_number: roll })
             })
                 .then(r => r.json())
@@ -233,18 +257,20 @@
                             resultDiv.innerHTML = '<p style="color: var(--text-muted);">No attendance records found.</p>';
                             return;
                         }
-                        let html = `<h3 style="color: var(--primary); margin-bottom: 8px; font-size: 1.1rem;">${data.name}</h3>`;
+                        let html = `<h3 style="color: var(--primary); margin-bottom: 8px; font-size: 1.1rem;">${escapeHtml(data.name)}</h3>`;
                         html += `<p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px;">Total Records: ${data.records.length}</p>`;
                         data.records.forEach((r, i) => {
+                            let safeLogin = escapeHtml(r.login);
+                            let safeLogout = escapeHtml(r.logout || 'Active');
                             html += `<div style="background: var(--bg-main); padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border);">
                             <div style="font-weight: 600; font-size: 0.85rem; color: var(--secondary); margin-bottom: 4px;">Session ${data.records.length - i}</div>
-                            <div style="font-size: 0.9rem;"><strong>Login:</strong> ${r.login}</div>
-                            <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong> ${r.logout || 'Active'}</div>
+                            <div style="font-size: 0.9rem;"><strong>Login:</strong> ${safeLogin}</div>
+                            <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong> ${safeLogout}</div>
                         </div>`;
                         });
                         resultDiv.innerHTML = html;
                     } else {
-                        resultDiv.innerHTML = `<p class="status error">${data.message}</p>`;
+                        resultDiv.innerHTML = `<p class="status error">${escapeHtml(data.message)}</p>`;
                     }
                 })
                 .catch(() => {

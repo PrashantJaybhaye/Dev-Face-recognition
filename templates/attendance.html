@@ -147,7 +147,7 @@
 
             <div style="display: flex; gap: 12px; margin-top: 24px;">
                 <button class="btn btn-primary" id="captureBtn" onclick="captureAndRecognize()" style="flex: 1;">
-                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z">
                         </path>
@@ -180,6 +180,12 @@
         // determine the correct endpoint
         const isStudent = "{{ 'true' if session.get('student_logged_in') else 'false' }}" === "true";
         const endpoint = isStudent ? '/student_recognize' : '/recognize';
+
+        const escapeHtml = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        };
 
         async function startCamera() {
             try {
@@ -232,7 +238,7 @@
                     resultDiv.style.display = 'block';
 
                     if (data.success) {
-                        let displayName = data.name || 'Student';
+                        let displayName = escapeHtml(data.name || 'Student');
                         if (data.action === 'login') {
                             resultDiv.className = 'result success';
                             resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">✅ Welcome!</strong>${displayName}, attendance marked for entry.`;
@@ -246,7 +252,8 @@
                         successActions.style.display = 'block';
                     } else {
                         resultDiv.className = 'result error';
-                        resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ Verification Failed</strong>${data.message || 'Face not matched. Please try again.'}`;
+                        let safeMessage = escapeHtml(data.message || 'Face not matched. Please try again.');
+                        resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ Verification Failed</strong>${safeMessage}`;
                         successActions.style.display = 'none';
                     }
 
@@ -257,7 +264,7 @@
                     const successActions = document.getElementById('successActions');
                     resultDiv.style.display = 'block';
                     resultDiv.className = 'result error';
-                    resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ System Error</strong>${err.message}`;
+                    resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ System Error</strong>${escapeHtml(err.message)}`;
                     successActions.style.display = 'none';
                     document.getElementById('countdown').textContent = 'A network error occurred';
                 })

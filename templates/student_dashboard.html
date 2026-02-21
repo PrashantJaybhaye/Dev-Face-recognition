@@ -27,29 +27,33 @@
         </div>
 
         <div class="dashboard-grid">
-            <div class="dash-card success" onclick="window.location.href='/attendance'">
+            <button class="dash-card success" onclick="window.location.href='/attendance'"
+                style="width: 100%; border: none; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📸</div>
                 <h3>Mark Attendance</h3>
                 <p>Register your presence through face recognition scan.</p>
-            </div>
+            </button>
 
-            <div class="dash-card primary" onclick="viewAttendance()">
+            <button class="dash-card primary" onclick="viewAttendance()"
+                style="width: 100%; border: none; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📋</div>
                 <h3>View History</h3>
                 <p>Track your past and active attendance records instantly.</p>
-            </div>
+            </button>
 
-            <div class="dash-card danger" onclick="retakePhotos()">
+            <button class="dash-card danger" onclick="retakePhotos()"
+                style="width: 100%; border: none; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">🔄</div>
                 <h3>Profile Update</h3>
                 <p>Retake face sample images when requested by admin.</p>
-            </div>
+            </button>
 
-            <div class="dash-card secondary" onclick="window.location.href='/'">
+            <button class="dash-card secondary" onclick="window.location.href='/'"
+                style="width: 100%; border: none; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">🚪</div>
                 <h3>Return Home</h3>
                 <p>Navigate back to the main login prompt securely.</p>
-            </div>
+            </button>
         </div>
     </main>
 
@@ -72,30 +76,53 @@
     </div>
 
     <script>
+        const escapeHtml = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        };
+
         function viewAttendance() {
+            const list = document.getElementById('attendanceList');
+            document.getElementById('viewModal').classList.add('active');
+            list.innerHTML = '<p style="text-align: center;">Loading records...</p>';
+
             fetch('/student_check_attendance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             })
-                .then(r => r.json())
+                .then(response => {
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
-                        const list = document.getElementById('attendanceList');
                         if (data.records.length === 0) {
                             list.innerHTML = '<p style="color: var(--text-muted); text-align: center;">You have no attendance records yet.</p>';
                         } else {
-                            let html = `<p style="font-size: 0.95rem; margin-bottom: 16px; font-weight: 500;">Total Registered Sessions: ${data.records.length}</p>`;
+                            let html = `<p style="font-size: 0.95rem; margin-bottom: 16px; font-weight: 500;">Total Registered Sessions:
+        ${data.records.length}</p>`;
                             data.records.forEach((r, i) => {
-                                html += `<div style="background: var(--bg-main); border: 1px solid var(--border); padding: 16px; margin-bottom: 12px; border-radius: 8px;">
-                                <div style="font-weight: 600; font-size: 0.9rem; color: var(--secondary); margin-bottom: 8px;">Session ${data.records.length - i}</div>
-                                <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>Login:</strong> ${r.login}</div>
-                                <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong> ${r.logout || 'Still logged in'}</div>
-                            </div>`;
+                                let safeLogin = escapeHtml(r.login);
+                                let safeLogout = escapeHtml(r.logout || 'Still logged in');
+                                html += `<div
+        style="background: var(--bg-main); border: 1px solid var(--border); padding: 16px; margin-bottom: 12px; border-radius: 8px;">
+        <div style="font-weight: 600; font-size: 0.9rem; color: var(--secondary); margin-bottom: 8px;">Session
+            ${data.records.length - i}</div>
+        <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>Login:</strong> ${safeLogin}</div>
+        <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong>
+            ${safeLogout}</div>
+    </div>`;
                             });
                             list.innerHTML = html;
                         }
-                        document.getElementById('viewModal').classList.add('active');
+                    } else {
+                        list.innerHTML = `<p style="color: var(--danger); text-align: center;">${escapeHtml(data.message || 'Error fetching records.')}</p>`;
                     }
+                })
+                .catch(err => {
+                    list.innerHTML = `<p style="color: var(--danger); text-align: center;">Error: ${escapeHtml(err.message)}</p>`;
+                    console.error('Error fetching attendance:', err);
                 });
         }
 

@@ -19,8 +19,15 @@
 
             <div class="form-group">
                 <label for="rollNumber">Roll Number</label>
-                <input type="number" id="rollNumber" placeholder="Enter your roll number">
+                <input type="text" inputmode="text" id="rollNumber" placeholder="Enter your roll number">
             </div>
+
+            <div class="form-group" style="text-align: center;">
+                <video id="video" autoplay playsinline
+                    style="width: 100%; max-height: 240px; border-radius: 8px; border: 1px solid var(--border); transform: scaleX(-1);"></video>
+                <canvas id="canvas" style="display: none;"></canvas>
+            </div>
+            <input type="hidden" id="csrf-token" value="{{ csrf_token() }}">
 
             <div style="margin-top: 24px;">
                 <button class="btn btn-primary" onclick="login()">
@@ -42,9 +49,33 @@
         </div>
     </div>
     <script>
+        let stream = null;
+        async function startCamera() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                document.getElementById('error-msg').textContent = 'Camera API not supported in this browser.';
+                document.getElementById('error-msg').style.display = 'block';
+                return;
+            }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                document.getElementById('video').srcObject = stream;
+            } catch (err) {
+                document.getElementById('error-msg').textContent = 'Camera required for verification.';
+                document.getElementById('error-msg').style.display = 'block';
+            }
+        }
+        startCamera();
+
         function login() {
             const rollNumber = document.getElementById('rollNumber').value;
             const errorMsg = document.getElementById('error-msg');
+            const csrfToken = document.getElementById('csrf-token') ? document.getElementById('csrf-token').value : '';
+
+            if (!csrfToken) {
+                errorMsg.textContent = 'Security token missing. Please refresh the page.';
+                errorMsg.style.display = 'block';
+                return;
+            }
 
             if (!rollNumber) {
                 errorMsg.textContent = 'Please enter your roll number.';
@@ -52,17 +83,37 @@
                 return;
             }
 
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+
+            errorMsg.style.display = 'none';
+            if (!video.videoWidth || video.videoWidth === 0 || !video.readyState || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                errorMsg.textContent = 'Camera stream not ready. Please ensure your camera is allowed and turned on.';
+                errorMsg.style.display = 'block';
+                return;
+            }
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+
+            const imageData = canvas.toDataURL('image/jpeg');
+
             fetch('/student_login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roll_number: rollNumber })
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ roll_number: rollNumber, image: imageData })
             })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
+                        if (stream) stream.getTracks().forEach(t => t.stop());
                         window.location.href = '/student_dashboard';
                     } else {
-                        errorMsg.textContent = data.message || 'Invalid roll number.';
+                        errorMsg.textContent = data.message || 'Invalid roll number or face mismatch.';
                         errorMsg.style.display = 'block';
                     }
                 })

@@ -17,27 +17,50 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import Paragraph, Spacer
 from reportlab.lib.units import inch
 import numpy as np
+import tempfile
+import threading
+from werkzeug.security import generate_password_hash, check_password_hash
+import io
 
 app = Flask(__name__)
-app.secret_key = 'fras_secret_key_2024'
+app.secret_key = os.environ.get('SECRET_KEY')
+if not app.secret_key:
+    raise ValueError("No SECRET_KEY set for Flask application. Please configure it via environment variables.")
+
+import secrets
+
+@app.before_request
+def ensure_csrf_token():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(16)
+
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=lambda: session.get('csrf_token', ''))
 
 known_embeddings_cache = {}
+known_embeddings_cache_lock = threading.Lock()
 
 def get_student_embeddings(roll_number, image_folder):
-    if roll_number in known_embeddings_cache:
-        return known_embeddings_cache[roll_number]
+    with known_embeddings_cache_lock:
+        if roll_number in known_embeddings_cache:
+            return known_embeddings_cache[roll_number]
     
     embeddings = []
     if os.path.exists(image_folder):
         for img_file in os.listdir(image_folder):
             img_path = os.path.join(image_folder, img_file)
             try:
-                reps = DeepFace.represent(img_path=img_path, model_name="Facenet", enforce_detection=False)
+                reps = DeepFace.represent(img_path=img_path, model_name="Facenet", enforce_detection=True)
                 if len(reps) > 0:
                     embeddings.append(reps[0]['embedding'])
-            except:
+            except ValueError:
                 pass
-    known_embeddings_cache[roll_number] = embeddings
+            except Exception as e:
+                app.logger.exception(f"Error computing face embeddings for {img_path}: {e}")
+    
+    with known_embeddings_cache_lock:
+        known_embeddings_cache[roll_number] = embeddings
     return embeddings
 
 def cosine_distance(source_rep, test_rep):
@@ -45,10 +68,13 @@ def cosine_distance(source_rep, test_rep):
         source_rep = np.array(source_rep)
     if isinstance(test_rep, list):
         test_rep = np.array(test_rep)
-    a = np.matmul(np.transpose(source_rep), test_rep)
-    b = np.sum(np.multiply(source_rep, source_rep))
-    c = np.sum(np.multiply(test_rep, test_rep))
-    return 1 - (a / (np.sqrt(b) * np.sqrt(c)))
+    a = np.dot(source_rep, test_rep)
+    norm_s = np.linalg.norm(source_rep)
+    norm_t = np.linalg.norm(test_rep)
+    denom = norm_s * norm_t
+    if denom == 0:
+        return 1.0
+    return 1 - (a / denom)
 
 def setup_database():
     conn = sqlite3.connect('studentss.db')
@@ -83,8 +109,17 @@ def setup_database():
         )
     ''')
     
-    c.execute("DELETE FROM admin WHERE username = 'admin'")
-    c.execute("INSERT INTO admin (username, password) VALUES ('admin', 'admin123')")
+    c.execute("SELECT * FROM admin WHERE username = 'admin'")
+    if not c.fetchone():
+        initial_pw = os.environ.get('INITIAL_ADMIN_PASSWORD') or secrets.token_urlsafe(12)
+        with open('initial_admin_password.txt', 'w') as f:
+            f.write(initial_pw)
+        try:
+            os.chmod('initial_admin_password.txt', 0o600)
+        except Exception:
+            pass
+        hashed_pw = generate_password_hash(initial_pw)
+        c.execute("INSERT INTO admin (username, password) VALUES ('admin', ?)", (hashed_pw,))
     conn.commit()
     conn.close()
 
@@ -107,14 +142,11 @@ def admin_login():
     
     conn = sqlite3.connect('studentss.db')
     c = conn.cursor()
-    c.execute("DELETE FROM admin WHERE username = 'admin'")
-    c.execute("INSERT INTO admin (username, password) VALUES ('admin', 'admin123')")
-    conn.commit()
-    c.execute("SELECT * FROM admin WHERE username = ? AND password = ?", (username, password))
+    c.execute("SELECT password FROM admin WHERE username = ?", (username,))
     result = c.fetchone()
     conn.close()
     
-    if result:
+    if result and check_password_hash(result[0], password):
         session['admin_logged_in'] = True
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Invalid credentials'})
@@ -134,25 +166,76 @@ def student_login_page():
 
 @app.route('/student_login', methods=['POST'])
 def student_login():
+    csrf_token_header = request.headers.get('X-CSRFToken')
+    if not csrf_token_header or csrf_token_header == 'MISSING_CSRF_TOKEN' or csrf_token_header != session.get('csrf_token'):
+        return jsonify({'success': False, 'message': 'CSRF verification failed or missing token'}), 400
+        
     data = request.json
     roll_number = data.get('roll_number')
+    image_data = data.get('image')
     
-    if not roll_number or not roll_number.isdigit():
+    if not isinstance(roll_number, (int, str)) or not str(roll_number).isdigit():
         return jsonify({'success': False, 'message': 'Invalid roll number'})
+        
+    if not image_data:
+        return jsonify({'success': False, 'message': 'Face verification image required'})
     
     roll_number = int(roll_number)
     conn = sqlite3.connect('studentss.db')
     c = conn.cursor()
-    c.execute("SELECT name, roll_number FROM students WHERE roll_number = ?", (roll_number,))
+    c.execute("SELECT name, roll_number, image_folder FROM students WHERE roll_number = ?", (roll_number,))
     student = c.fetchone()
     conn.close()
     
-    if student:
+    if not student:
+        return jsonify({'success': False, 'message': 'Student not found'})
+        
+    try:
+        if ',' in image_data:
+            image_data = image_data.split(',', 1)[1]
+        else:
+            image_data = image_data.strip()
+        img_bytes = base64.b64decode(image_data)
+    except Exception as e:
+        app.logger.exception("Decode error")
+        return jsonify({'success': False, 'message': 'Invalid image format'})
+        
+    temp_file = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+    cap_path = temp_file.name
+    temp_file.write(img_bytes)
+    temp_file.close()
+    
+    try:
+        reps = DeepFace.represent(img_path=cap_path, model_name="Facenet", enforce_detection=True)
+    except ValueError:
+        os.remove(cap_path)
+        return jsonify({'success': False, 'message': 'No face detected'})
+    except Exception as e:
+        app.logger.exception("Face match error")
+        if os.path.exists(cap_path):
+            os.remove(cap_path)
+        return jsonify({'success': False, 'message': 'Verification error'})
+        
+    cap_emb = reps[0]['embedding']
+    student_embeddings = get_student_embeddings(roll_number, student[2])
+    
+    best_dist = float('inf')
+    if student_embeddings:
+        for emb in student_embeddings:
+            dist = cosine_distance(cap_emb, emb)
+            if dist < best_dist:
+                best_dist = dist
+                
+    if os.path.exists(cap_path):
+        os.remove(cap_path)
+        
+    if best_dist <= 0.35:
         session['student_logged_in'] = True
         session['student_name'] = student[0]
         session['student_roll'] = student[1]
         return jsonify({'success': True, 'name': student[0]})
-    return jsonify({'success': False, 'message': 'Student not found'})
+    else:
+        return jsonify({'success': False, 'message': 'Face verification failed'})
 
 
 @app.route('/student_dashboard')
@@ -184,7 +267,7 @@ def register_student():
     if not all([name, roll_number, department, address]):
         return jsonify({'success': False, 'message': 'All fields are required'})
     
-    if not roll_number.isdigit():
+    if not isinstance(roll_number, (int, str)) or not str(roll_number).isdigit():
         return jsonify({'success': False, 'message': 'Roll number must be an integer'})
     
     roll_number = int(roll_number)
@@ -201,8 +284,16 @@ def register_student():
         os.makedirs(image_folder)
     
     for i, img_data in enumerate(images[:5]):
-        img_data = img_data.split(',')[1]
-        img_bytes = base64.b64decode(img_data)
+        try:
+            if ',' in img_data:
+                img_data_clean = img_data.split(',', 1)[1]
+            else:
+                img_data_clean = img_data.strip()
+            img_bytes = base64.b64decode(img_data_clean)
+        except Exception as e:
+            app.logger.exception(f"Error decoding image base64 for {roll_number}: {e}")
+            continue
+            
         image_path = os.path.join(image_folder, f"{roll_number}_{i}.jpg")
         with open(image_path, 'wb') as f:
             f.write(img_bytes)
@@ -212,8 +303,9 @@ def register_student():
     conn.commit()
     conn.close()
     
-    if roll_number in known_embeddings_cache:
-        del known_embeddings_cache[roll_number]
+    with known_embeddings_cache_lock:
+        if roll_number in known_embeddings_cache:
+            del known_embeddings_cache[roll_number]
     
     return jsonify({'success': True, 'message': 'Registration successful!'})
 
@@ -236,89 +328,94 @@ def recognize_face():
     if not image_data:
         return jsonify({'success': False, 'message': 'No image provided'})
     
-    image_data = image_data.split(',')[1]
-    img_bytes = base64.b64decode(image_data)
+    try:
+        if ',' in image_data:
+            image_data = image_data.split(',', 1)[1]
+        else:
+            image_data = image_data.strip()
+        img_bytes = base64.b64decode(image_data)
+    except Exception as e:
+        app.logger.exception(f"Error decoding base64 image: {e}")
+        return jsonify({'success': False, 'message': 'Invalid image format'})
     
-    captured_image_path = 'known_faces/temp.jpg'
-    with open(captured_image_path, 'wb') as f:
-        f.write(img_bytes)
+    temp_file = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+    captured_image_path = temp_file.name
+    temp_file.write(img_bytes)
+    temp_file.close()
     
     try:
-        captured_reps = DeepFace.represent(img_path=captured_image_path, model_name="Facenet", enforce_detection=False)
-        if not captured_reps:
+        captured_reps = DeepFace.represent(img_path=captured_image_path, model_name="Facenet", enforce_detection=True)
+    except ValueError:
+        os.remove(captured_image_path)
+        return jsonify({'success': False, 'message': 'No face detected in the given image'})
+    except Exception as e:
+        app.logger.exception("An error occurred during face recognition")
+        if 'conn' in locals():
+            try:
+                conn.close()
+            except Exception:
+                pass
+        if os.path.exists(captured_image_path):
             os.remove(captured_image_path)
-            return jsonify({'success': False, 'message': 'No face detected in the given image'})
+        return jsonify({'success': False, 'message': 'An internal error occurred'})
             
-        captured_embedding = captured_reps[0]['embedding']
+    captured_embedding = captured_reps[0]['embedding']
+    
+    conn = sqlite3.connect('studentss.db')
+    c = conn.cursor()
+    c.execute("SELECT name, roll_number, image_folder FROM students")
+    students = c.fetchall()
+    
+    best_match = None
+    best_dist = 0.35  # Stricter verification threshold
+    
+    for student in students:
+        name, roll_number, image_folder = student
         
-        conn = sqlite3.connect('studentss.db')
-        c = conn.cursor()
-        c.execute("SELECT name, roll_number, image_folder FROM students")
-        students = c.fetchall()
+        student_embeddings = get_student_embeddings(roll_number, image_folder)
         
-        valid_matches = []
+        if not student_embeddings:
+            continue
         
-        for student in students:
-            name, roll_number, image_folder = student
-            
-            student_embeddings = get_student_embeddings(roll_number, image_folder)
-            
-            if not student_embeddings:
-                continue
-            
-            student_matches = 0
-            student_distances = []
-            
-            for emb in student_embeddings:
-                dist = cosine_distance(captured_embedding, emb)
-                if dist <= 0.40:
-                    student_matches += 1
-                    student_distances.append(dist)
-            
-            if student_matches >= 1:
-                avg_distance = sum(student_distances) / len(student_distances)
-                valid_matches.append((avg_distance, name, roll_number))
+        for emb in student_embeddings:
+            dist = cosine_distance(captured_embedding, emb)
+            if dist < best_dist:
+                best_dist = dist
+                best_match = (name, roll_number)
+    
+    if best_match:
+        name, roll_number = best_match
         
-        if valid_matches:
-            # Sort by lowest average distance
-            valid_matches.sort(key=lambda x: x[0])
-            best_distance, name, roll_number = valid_matches[0]
-            
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            c.execute("SELECT id, login_time, logout_time FROM attendance WHERE roll_number = ? AND DATE(login_time) = DATE('now')", (roll_number,))
-            record = c.fetchone()
-            
-            if record:
-                if record[2] is None:
-                    c.execute("UPDATE attendance SET logout_time = ? WHERE id = ?", (current_time, record[0]))
-                    conn.commit()
-                    conn.close()
-                    if os.path.exists(captured_image_path):
-                        os.remove(captured_image_path)
-                    return jsonify({'success': True, 'action': 'logout', 'name': name})
-                else:
-                    conn.close()
-                    if os.path.exists(captured_image_path):
-                        os.remove(captured_image_path)
-                    return jsonify({'success': True, 'action': 'already_done', 'name': name})
-            else:
-                c.execute("INSERT INTO attendance (roll_number, login_time) VALUES (?, ?)", (roll_number, current_time))
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        c.execute("SELECT id, login_time, logout_time FROM attendance WHERE roll_number = ? AND DATE(login_time) = DATE('now')", (roll_number,))
+        record = c.fetchone()
+        
+        if record:
+            if record[2] is None:
+                c.execute("UPDATE attendance SET logout_time = ? WHERE id = ?", (current_time, record[0]))
                 conn.commit()
                 conn.close()
                 if os.path.exists(captured_image_path):
                     os.remove(captured_image_path)
-                return jsonify({'success': True, 'action': 'login', 'name': name})
+                return jsonify({'success': True, 'action': 'logout', 'name': name})
+            else:
+                conn.close()
+                if os.path.exists(captured_image_path):
+                    os.remove(captured_image_path)
+                return jsonify({'success': True, 'action': 'already_done', 'name': name})
         else:
+            c.execute("INSERT INTO attendance (roll_number, login_time) VALUES (?, ?)", (roll_number, current_time))
+            conn.commit()
             conn.close()
             if os.path.exists(captured_image_path):
                 os.remove(captured_image_path)
-            return jsonify({'success': False, 'message': 'No match found'})
-            
-    except Exception as e:
+            return jsonify({'success': True, 'action': 'login', 'name': name})
+    else:
+        conn.close()
         if os.path.exists(captured_image_path):
             os.remove(captured_image_path)
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': 'No match found'})
 
 
 @app.route('/student_recognize', methods=['POST'])
@@ -336,72 +433,85 @@ def student_recognize():
     if not image_data:
         return jsonify({'success': False, 'message': 'No image provided'})
     
-    image_data = image_data.split(',')[1]
-    img_bytes = base64.b64decode(image_data)
-    
-    captured_image_path = 'known_faces/temp_student.jpg'
-    with open(captured_image_path, 'wb') as f:
-        f.write(img_bytes)
+    try:
+        if ',' in image_data:
+            image_data = image_data.split(',', 1)[1]
+        else:
+            image_data = image_data.strip()
+        img_bytes = base64.b64decode(image_data)
+    except Exception as e:
+        app.logger.exception(f"Error decoding base64 image: {e}")
+        return jsonify({'success': False, 'message': 'Invalid image format'})
+        
+    temp_file = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+    captured_image_path = temp_file.name
+    temp_file.write(img_bytes)
+    temp_file.close()
     
     try:
-        captured_reps = DeepFace.represent(img_path=captured_image_path, model_name="Facenet", enforce_detection=False)
-        if not captured_reps:
-            os.remove(captured_image_path)
-            return jsonify({'success': False, 'message': 'No face detected in the image'})
-            
-        captured_embedding = captured_reps[0]['embedding']
-        
-        conn = sqlite3.connect('studentss.db')
-        c = conn.cursor()
-        c.execute("SELECT image_folder FROM students WHERE roll_number = ?", (roll_number,))
-        result = c.fetchone()
-        
-        if not result:
-            conn.close()
-            if os.path.exists(captured_image_path):
-                os.remove(captured_image_path)
-            return jsonify({'success': False, 'message': 'Student not found'})
-        
-        image_folder = result[0]
-        student_embeddings = get_student_embeddings(roll_number, image_folder)
-        
-        matches = 0
-        if student_embeddings:
-            for emb in student_embeddings:
-                dist = cosine_distance(captured_embedding, emb)
-                if dist <= 0.40:
-                    matches += 1
-        
-        if os.path.exists(captured_image_path):
-            os.remove(captured_image_path)
-        
-        if matches >= 1:
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            c.execute("SELECT id, logout_time FROM attendance WHERE roll_number = ? AND DATE(login_time) = DATE('now')", (roll_number,))
-            record = c.fetchone()
-            
-            if record and record[1] is None:
-                c.execute("UPDATE attendance SET logout_time = ? WHERE id = ?", (current_time, record[0]))
-                conn.commit()
-                conn.close()
-                return jsonify({'success': True, 'action': 'logout'})
-            elif record:
-                conn.close()
-                return jsonify({'success': True, 'action': 'already_done'})
-            else:
-                c.execute("INSERT INTO attendance (roll_number, login_time) VALUES (?, ?)", (roll_number, current_time))
-                conn.commit()
-                conn.close()
-                return jsonify({'success': True, 'action': 'login'})
-        else:
-            conn.close()
-            return jsonify({'success': False, 'message': 'Face not recognized'})
-            
+        captured_reps = DeepFace.represent(img_path=captured_image_path, model_name="Facenet", enforce_detection=True)
+    except ValueError:
+        os.remove(captured_image_path)
+        return jsonify({'success': False, 'message': 'No face detected in the image'})
     except Exception as e:
+        app.logger.exception("An error occurred during student face recognition")
+        if 'conn' in locals():
+            try:
+                conn.close()
+            except Exception:
+                pass
         if os.path.exists(captured_image_path):
             os.remove(captured_image_path)
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': 'An internal error occurred'})
+            
+    captured_embedding = captured_reps[0]['embedding']
+    
+    conn = sqlite3.connect('studentss.db')
+    c = conn.cursor()
+    c.execute("SELECT image_folder FROM students WHERE roll_number = ?", (roll_number,))
+    result = c.fetchone()
+    
+    if not result:
+        conn.close()
+        if os.path.exists(captured_image_path):
+            os.remove(captured_image_path)
+        return jsonify({'success': False, 'message': 'Student not found'})
+    
+    image_folder = result[0]
+    student_embeddings = get_student_embeddings(roll_number, image_folder)
+    
+    best_dist = float('inf')
+    if student_embeddings:
+        for emb in student_embeddings:
+            dist = cosine_distance(captured_embedding, emb)
+            if dist < best_dist:
+                best_dist = dist
+    
+    if os.path.exists(captured_image_path):
+        os.remove(captured_image_path)
+    
+    if best_dist <= 0.35:
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        c.execute("SELECT id, logout_time FROM attendance WHERE roll_number = ? AND DATE(login_time) = DATE('now')", (roll_number,))
+        record = c.fetchone()
+        
+        if record and record[1] is None:
+            c.execute("UPDATE attendance SET logout_time = ? WHERE id = ?", (current_time, record[0]))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'action': 'logout'})
+        elif record:
+            conn.close()
+            return jsonify({'success': True, 'action': 'already_done'})
+        else:
+            c.execute("INSERT INTO attendance (roll_number, login_time) VALUES (?, ?)", (roll_number, current_time))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'action': 'login'})
+    else:
+        conn.close()
+        return jsonify({'success': False, 'message': 'Face not recognized'})
 
 
 @app.route('/check_attendance', methods=['POST'])
@@ -462,16 +572,34 @@ def edit_student():
     department = data.get('department')
     address = data.get('address')
     
+    if not isinstance(roll_number, (int, str)) or not str(roll_number).isdigit():
+        return jsonify({'success': False, 'message': 'Invalid roll number'}), 400
+    
+    if not name or not isinstance(name, str) or not name.strip():
+        return jsonify({'success': False, 'message': 'Invalid name'}), 400
+        
+    if not department or not isinstance(department, str) or not department.strip():
+        return jsonify({'success': False, 'message': 'Invalid department'}), 400
+        
+    if not address or not isinstance(address, str) or not address.strip():
+        return jsonify({'success': False, 'message': 'Invalid address'}), 400
+    
     try:
         conn = sqlite3.connect('studentss.db')
         c = conn.cursor()
         c.execute("UPDATE students SET name = ?, department = ?, address = ? WHERE roll_number = ?",
-                  (name, department, address, roll_number))
+                  (name.strip(), department.strip(), address.strip(), int(roll_number)))
+        
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({'success': False, 'message': 'Student not found'}), 404
+            
         conn.commit()
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+        app.logger.exception("Error updating student")
+        return jsonify({'success': False, 'message': 'An internal error occurred'})
 
 
 @app.route('/export_pdf')
@@ -479,7 +607,9 @@ def export_pdf():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_login_page'))
     
-    pdf_file = "attendance_report.pdf"
+    temp_pdf_fd, pdf_file = tempfile.mkstemp(suffix='.pdf')
+    os.close(temp_pdf_fd)
+    
     document = SimpleDocTemplate(pdf_file, pagesize=letter)
     elements = []
     
@@ -582,7 +712,23 @@ def export_pdf():
     conn.close()
     document.build(elements)
     
-    return send_file(pdf_file, as_attachment=True)
+    with open(pdf_file, 'rb') as f:
+        pdf_data = f.read()
+        
+    if os.path.exists(pdf_file):
+        try:
+            os.remove(pdf_file)
+        except Exception:
+            pass
+            
+    # using download_name instead of attachment_filename for modern flask 
+    response = send_file(
+        io.BytesIO(pdf_data),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name='attendance_report.pdf'
+    )
+    return response
 
 
 @app.route('/student_check_attendance', methods=['POST'])
@@ -618,4 +764,13 @@ def student_logout():
 
 if __name__ == '__main__':
     setup_database()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    debug_mode = os.environ.get('APP_DEBUG', 'False').lower() in ['true', '1', 't']
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
+    
+    if host == '0.0.0.0' and debug_mode:
+        debug_mode = False
+        app.logger.warning("Debug mode disabled because host is 0.0.0.0")
+        
+    # Note: For production, use a WSGI server like Gunicorn:
+    # gunicorn -w 4 -b 0.0.0.0:5000 app:app
+    app.run(debug=debug_mode, host=host, port=5000)
