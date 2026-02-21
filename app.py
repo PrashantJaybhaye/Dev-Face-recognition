@@ -242,7 +242,9 @@ def student_login():
 def student_dashboard():
     if not session.get('student_logged_in'):
         return redirect(url_for('student_login_page'))
-    return render_template('student_dashboard.html')
+    return render_template('student_dashboard.html', 
+                           student_name=session.get('student_name'), 
+                           student_roll=session.get('student_roll'))
 
 
 @app.route('/register')
@@ -312,8 +314,8 @@ def register_student():
 
 @app.route('/attendance')
 def attendance_page():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_login_page'))
+    if not session.get('admin_logged_in') and not session.get('student_logged_in'):
+        return redirect(url_for('index'))
     return render_template('attendance.html')
 
 

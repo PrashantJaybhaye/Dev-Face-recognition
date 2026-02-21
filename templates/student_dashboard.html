@@ -22,7 +22,12 @@
 
     <main class="dashboard-container">
         <div style="margin-bottom: 24px;">
-            <h2 style="font-size: 1.5rem; font-weight: 600;">Welcome, Student</h2>
+            <h2 style="font-size: 1.5rem; font-weight: 600;">Welcome, {{ student_name if student_name else 'Student' }}
+            </h2>
+            {% if student_roll %}
+            <p style="color: var(--primary); font-weight: 500; font-size: 0.95rem; margin-top: 4px;">Roll Number: {{
+                student_roll }}</p>
+            {% endif %}
             <p style="color: var(--text-muted); margin-top: 4px;">Easily manage your attendance profile and records.</p>
         </div>
 

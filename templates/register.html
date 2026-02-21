@@ -218,7 +218,12 @@
             status.className = 'status';
 
             const submitBtn = document.querySelector('button[onclick="submitRegistration()"]');
-            if (submitBtn) submitBtn.disabled = true;
+            let originalText = 'Complete Registration';
+            if (submitBtn) {
+                originalText = submitBtn.innerHTML;
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = 'Processing <span style="display:inline-block; margin-left:8px; width:16px; height:16px; border:2px solid #fff; border-radius:50%; border-top-color:transparent; animation:spin 1s linear infinite;"></span>';
+            }
 
             fetch('/register', {
                 method: 'POST',
@@ -241,13 +246,19 @@
                     } else {
                         status.textContent = data.message || 'Registration failed.';
                         status.className = 'status error';
-                        if (submitBtn) submitBtn.disabled = false;
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = originalText;
+                        }
                     }
                 })
                 .catch(err => {
                     status.textContent = 'Error: ' + err.message;
                     status.className = 'status error';
-                    if (submitBtn) submitBtn.disabled = false;
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalText;
+                    }
                 });
         }
 
