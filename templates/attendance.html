@@ -24,6 +24,7 @@
             border-radius: 8px;
             border: 1px solid var(--border);
             background: #000;
+            transform: scaleX(-1);
         }
 
         #canvas {
@@ -164,7 +165,7 @@
         let stream = null;
         let isProcessing = false;
         // determine the correct endpoint
-        const isStudent = {{ 'true' if session.get('student_logged_in') else 'false' }};
+        const isStudent = "{{ 'true' if session.get('student_logged_in') else 'false' }}" === "true";
         const endpoint = isStudent ? '/student_recognize' : '/recognize';
 
         async function startCamera() {

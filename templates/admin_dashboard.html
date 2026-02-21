@@ -136,6 +136,7 @@
                 document.getElementById('saveButtons').style.display = 'none';
                 document.getElementById('loadButtons').style.display = 'flex';
                 document.getElementById('editRoll').value = '';
+                if (document.getElementById('editStatus')) document.getElementById('editStatus').textContent = '';
             }
             if (id === 'checkModal') {
                 document.getElementById('checkRoll').value = '';
@@ -145,18 +146,36 @@
 
         function loadStudent() {
             const roll = document.getElementById('editRoll').value;
-            if (!roll) return alert('Please enter a roll number');
+            const statusNode = document.getElementById('editStatus') || createStatusNode('editRoll');
+
+            if (!roll) {
+                statusNode.textContent = 'Please enter a valid roll number.';
+                statusNode.className = 'status error';
+                return;
+            }
+
+            statusNode.textContent = 'Fetching details...';
+            statusNode.className = 'status';
+
             fetch('/get_student/' + roll)
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
+                        statusNode.textContent = '';
                         document.getElementById('editName').value = data.student.name;
                         document.getElementById('editDept').value = data.student.department;
                         document.getElementById('editAddress').value = data.student.address;
                         document.getElementById('editFields').style.display = 'block';
                         document.getElementById('loadButtons').style.display = 'none';
                         document.getElementById('saveButtons').style.display = 'flex';
-                    } else { alert('Student profile not found'); }
+                    } else {
+                        statusNode.textContent = 'Student profile not found.';
+                        statusNode.className = 'status error';
+                    }
+                })
+                .catch(() => {
+                    statusNode.textContent = 'Network error fetching data.';
+                    statusNode.className = 'status error';
                 });
         }
 
@@ -165,6 +184,11 @@
             const name = document.getElementById('editName').value;
             const dept = document.getElementById('editDept').value;
             const address = document.getElementById('editAddress').value;
+            const statusNode = document.getElementById('editStatus');
+
+            statusNode.textContent = 'Saving changes...';
+            statusNode.className = 'status';
+
             fetch('/edit_student', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roll_number: roll, name: name, department: dept, address: address })
@@ -172,16 +196,32 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-                        alert('Profile updated successfully!');
-                        closeModal('editModal');
+                        statusNode.textContent = 'Profile updated successfully!';
+                        statusNode.className = 'status success';
+                        setTimeout(() => closeModal('editModal'), 1500);
                     }
-                    else { alert('Error: ' + data.message); }
+                    else {
+                        statusNode.textContent = 'Error: ' + data.message;
+                        statusNode.className = 'status error';
+                    }
+                })
+                .catch(() => {
+                    statusNode.textContent = 'Network error saving data.';
+                    statusNode.className = 'status error';
                 });
         }
 
         function checkAttendance() {
             const roll = document.getElementById('checkRoll').value;
-            if (!roll) return alert('Please enter a roll number');
+            const resultDiv = document.getElementById('attendanceResult');
+
+            if (!roll) {
+                resultDiv.innerHTML = '<p class="status error">Please enter a valid roll number.</p>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<p class="status">Loading records...</p>';
+
             fetch('/check_attendance', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roll_number: roll })
@@ -190,21 +230,38 @@
                 .then(data => {
                     if (data.success) {
                         if (data.records.length === 0) {
-                            document.getElementById('attendanceResult').innerHTML = '<p style="color: var(--text-muted);">No attendance records found.</p>';
+                            resultDiv.innerHTML = '<p style="color: var(--text-muted);">No attendance records found.</p>';
                             return;
                         }
                         let html = `<h3 style="color: var(--primary); margin-bottom: 8px; font-size: 1.1rem;">${data.name}</h3>`;
                         html += `<p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px;">Total Records: ${data.records.length}</p>`;
                         data.records.forEach((r, i) => {
                             html += `<div style="background: var(--bg-main); padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border);">
-                            <div style="font-weight: 600; font-size: 0.85rem; color: var(--secondary); margin-bottom: 4px;">Session ${i + 1}</div>
+                            <div style="font-weight: 600; font-size: 0.85rem; color: var(--secondary); margin-bottom: 4px;">Session ${data.records.length - i}</div>
                             <div style="font-size: 0.9rem;"><strong>Login:</strong> ${r.login}</div>
                             <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong> ${r.logout || 'Active'}</div>
                         </div>`;
                         });
-                        document.getElementById('attendanceResult').innerHTML = html;
-                    } else { alert(data.message); }
+                        resultDiv.innerHTML = html;
+                    } else {
+                        resultDiv.innerHTML = `<p class="status error">${data.message}</p>`;
+                    }
+                })
+                .catch(() => {
+                    resultDiv.innerHTML = '<p class="status error">Network error fetching records.</p>';
                 });
+        }
+
+        // Helper func to inject a status node dynamically under an input
+        function createStatusNode(targetId) {
+            const p = document.createElement('p');
+            p.id = 'editStatus';
+            p.className = 'status';
+            p.style.marginTop = '10px';
+            p.style.fontWeight = '500';
+            p.style.fontSize = '0.9rem';
+            document.getElementById(targetId).parentNode.appendChild(p);
+            return p;
         }
     </script>
 </body>

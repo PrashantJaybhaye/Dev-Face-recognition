@@ -216,9 +216,7 @@ def recognize_face():
         c.execute("SELECT name, roll_number, image_folder FROM students")
         students = c.fetchall()
         
-        best_match = None
-        best_distance = float('inf')
-        match_count = 0
+        valid_matches = []
         
         for student in students:
             name, roll_number, image_folder = student
@@ -252,14 +250,14 @@ def recognize_face():
             
             if student_matches >= 2:
                 avg_distance = sum(student_distances) / len(student_distances) if student_distances else 1.0
-                
-                if avg_distance < best_distance:
-                    best_distance = avg_distance
-                    best_match = (name, roll_number)
-                    match_count += 1
+                if avg_distance < 0.4:
+                    valid_matches.append((avg_distance, name, roll_number))
         
-        if match_count == 1 and best_match and best_distance < 0.4:
-            name, roll_number = best_match
+        if valid_matches:
+            # Sort by lowest average distance
+            valid_matches.sort(key=lambda x: x[0])
+            best_distance, name, roll_number = valid_matches[0]
+            
             current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             c.execute("SELECT id, login_time, logout_time FROM attendance WHERE roll_number = ? AND DATE(login_time) = DATE('now')", (roll_number,))
@@ -282,10 +280,6 @@ def recognize_face():
                 conn.close()
                 os.remove(captured_image_path)
                 return jsonify({'success': True, 'action': 'login', 'name': name})
-        elif match_count > 1:
-            conn.close()
-            os.remove(captured_image_path)
-            return jsonify({'success': False, 'message': 'Multiple matches found'})
         else:
             conn.close()
             os.remove(captured_image_path)
@@ -397,7 +391,7 @@ def check_attendance():
     conn = sqlite3.connect('studentss.db')
     c = conn.cursor()
     
-    c.execute("SELECT login_time, logout_time FROM attendance WHERE roll_number = ?", (roll_number,))
+    c.execute("SELECT login_time, logout_time FROM attendance WHERE roll_number = ? ORDER BY login_time DESC", (roll_number,))
     records = c.fetchall()
     
     c.execute("SELECT name FROM students WHERE roll_number = ?", (roll_number,))
