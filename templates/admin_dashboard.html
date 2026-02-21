@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - FRAS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <header class="header">
+        <h1>Administrator Dashboard</h1>
+        <div class="header-actions">
+            <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
+                onclick="window.location.href='/logout'">
+                Sign Out
+            </button>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <div style="margin-bottom: 24px;">
+            <h2 style="font-size: 1.5rem; font-weight: 600;">System Overview</h2>
+            <p style="color: var(--text-muted); margin-top: 4px;">Manage students and attendance records.</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="dash-card success" onclick="window.location.href='/register'">
+                <div class="icon-wrapper">📸</div>
+                <h3>Register Student</h3>
+                <p>Add a new student profile and face data to the system.</p>
+            </div>
+
+            <div class="dash-card primary" onclick="openModal('editModal')">
+                <div class="icon-wrapper">✏️</div>
+                <h3>Edit Records</h3>
+                <p>Modify existing student details such as address or department.</p>
+            </div>
+
+            <div class="dash-card primary" onclick="window.location.href='/attendance'">
+                <div class="icon-wrapper">📹</div>
+                <h3>Mark Attendance</h3>
+                <p>Launch the real-time face recognition attendance scanner.</p>
+            </div>
+
+            <div class="dash-card primary" onclick="openModal('checkModal')">
+                <div class="icon-wrapper">📋</div>
+                <h3>View Logs</h3>
+                <p>Check daily attendance entry and exit logs per student.</p>
+            </div>
+
+            <div class="dash-card primary" onclick="window.location.href='/export_pdf'">
+                <div class="icon-wrapper">📊</div>
+                <h3>Export Reports</h3>
+                <p>Generate and download comprehensive attendance PDFs.</p>
+            </div>
+
+            <div class="dash-card danger" onclick="window.location.href='/'">
+                <div class="icon-wrapper">🚪</div>
+                <h3>Close Panel</h3>
+                <p>Return to the main landing page directly.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Student Data</h2>
+                <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Roll Number</label>
+                    <input type="number" id="editRoll" placeholder="Search by roll number">
+                </div>
+
+                <div id="editFields" style="display: none; margin-top: 20px;">
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" id="editName" placeholder="Student Name">
+                    </div>
+                    <div class="form-group">
+                        <label>Department</label>
+                        <input type="text" id="editDept" placeholder="Department code or name">
+                    </div>
+                    <div class="form-group">
+                        <label>Address</label>
+                        <input type="text" id="editAddress" placeholder="Home Address">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" id="loadButtons">
+                <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="loadStudent()">Fetch Details</button>
+            </div>
+            <div class="modal-footer" id="saveButtons" style="display: none;">
+                <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel Registration</button>
+                <button class="btn btn-success" onclick="saveStudent()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Check Modal -->
+    <div id="checkModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Attendance Logs</h2>
+                <button class="modal-close" onclick="closeModal('checkModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Roll Number</label>
+                    <input type="number" id="checkRoll" placeholder="Enter student roll number">
+                </div>
+
+                <div id="attendanceResult" style="margin-top: 20px; max-height: 300px; overflow-y: auto;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('checkModal')">Close</button>
+                <button class="btn btn-primary" onclick="checkAttendance()">View Records</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+            if (id === 'editModal') {
+                document.getElementById('editFields').style.display = 'none';
+                document.getElementById('saveButtons').style.display = 'none';
+                document.getElementById('loadButtons').style.display = 'flex';
+                document.getElementById('editRoll').value = '';
+            }
+            if (id === 'checkModal') {
+                document.getElementById('checkRoll').value = '';
+                document.getElementById('attendanceResult').innerHTML = '';
+            }
+        }
+
+        function loadStudent() {
+            const roll = document.getElementById('editRoll').value;
+            if (!roll) return alert('Please enter a roll number');
+            fetch('/get_student/' + roll)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('editName').value = data.student.name;
+                        document.getElementById('editDept').value = data.student.department;
+                        document.getElementById('editAddress').value = data.student.address;
+                        document.getElementById('editFields').style.display = 'block';
+                        document.getElementById('loadButtons').style.display = 'none';
+                        document.getElementById('saveButtons').style.display = 'flex';
+                    } else { alert('Student profile not found'); }
+                });
+        }
+
+        function saveStudent() {
+            const roll = document.getElementById('editRoll').value;
+            const name = document.getElementById('editName').value;
+            const dept = document.getElementById('editDept').value;
+            const address = document.getElementById('editAddress').value;
+            fetch('/edit_student', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roll_number: roll, name: name, department: dept, address: address })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Profile updated successfully!');
+                        closeModal('editModal');
+                    }
+                    else { alert('Error: ' + data.message); }
+                });
+        }
+
+        function checkAttendance() {
+            const roll = document.getElementById('checkRoll').value;
+            if (!roll) return alert('Please enter a roll number');
+            fetch('/check_attendance', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roll_number: roll })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        if (data.records.length === 0) {
+                            document.getElementById('attendanceResult').innerHTML = '<p style="color: var(--text-muted);">No attendance records found.</p>';
+                            return;
+                        }
+                        let html = `<h3 style="color: var(--primary); margin-bottom: 8px; font-size: 1.1rem;">${data.name}</h3>`;
+                        html += `<p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px;">Total Records: ${data.records.length}</p>`;
+                        data.records.forEach((r, i) => {
+                            html += `<div style="background: var(--bg-main); padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border);">
+                            <div style="font-weight: 600; font-size: 0.85rem; color: var(--secondary); margin-bottom: 4px;">Session ${i + 1}</div>
+                            <div style="font-size: 0.9rem;"><strong>Login:</strong> ${r.login}</div>
+                            <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong> ${r.logout || 'Active'}</div>
+                        </div>`;
+                        });
+                        document.getElementById('attendanceResult').innerHTML = html;
+                    } else { alert(data.message); }
+                });
+        }
+    </script>
+</body>
+
+</html>

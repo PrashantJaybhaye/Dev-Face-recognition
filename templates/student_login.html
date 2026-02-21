@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Login - FRAS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="auth-wrapper">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>Student Portal</h1>
+                <p>Face Recognition Attendance System</p>
+            </div>
+
+            <div class="form-group">
+                <label for="rollNumber">Roll Number</label>
+                <input type="number" id="rollNumber" placeholder="Enter your roll number">
+            </div>
+
+            <div style="margin-top: 24px;">
+                <button class="btn btn-primary" onclick="login()">
+                    Verify Identity
+                </button>
+            </div>
+
+            <div style="margin-top: 12px;">
+                <button class="btn btn-outline" onclick="window.location.href='/'">
+                    Return to Home
+                </button>
+            </div>
+
+            <p class="alert-error" id="error-msg"></p>
+
+            <p style="margin-top: 20px; font-size: 0.8rem; color: var(--text-muted); text-align: center;">
+                Contact the administrator to enroll if you are not registered yet.
+            </p>
+        </div>
+    </div>
+    <script>
+        function login() {
+            const rollNumber = document.getElementById('rollNumber').value;
+            const errorMsg = document.getElementById('error-msg');
+
+            if (!rollNumber) {
+                errorMsg.textContent = 'Please enter your roll number.';
+                errorMsg.style.display = 'block';
+                return;
+            }
+
+            fetch('/student_login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roll_number: rollNumber })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = '/student_dashboard';
+                    } else {
+                        errorMsg.textContent = data.message || 'Invalid roll number.';
+                        errorMsg.style.display = 'block';
+                    }
+                })
+                .catch(() => {
+                    errorMsg.textContent = 'An error occurred. Please try again.';
+                    errorMsg.style.display = 'block';
+                });
+        }
+
+        document.getElementById('rollNumber').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') login();
+        });
+    </script>
+</body>
+
+</html>

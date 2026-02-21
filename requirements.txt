@@ -8,3 +8,4 @@ numpy
 pandas
 deepface
 python-dotenv
+flask

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register Student - FRAS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .camera-section {
+            background: var(--bg-main);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        #video {
+            width: 100%;
+            max-width: 400px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .preview-img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid var(--border);
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 15px;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .status.success {
+            color: var(--success);
+        }
+
+        .status.error {
+            color: var(--danger);
+        }
+
+        .photo-count {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <h1>Student Registration</h1>
+        <div class="header-actions">
+            <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
+                onclick="window.location.href='/admin_dashboard'">
+                Back to Dashboard
+            </button>
+        </div>
+    </header>
+
+    <main class="dashboard-container" style="max-width: 800px;">
+        <div class="auth-card" style="max-width: 100%;">
+            <div style="margin-bottom: 24px;">
+                <h2 style="font-size: 1.25rem; font-weight: 600;">Basic Information</h2>
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Enter the student's primary details.</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                <div class="form-group">
+                    <label>Student Name</label>
+                    <input type="text" id="studentName" placeholder="Enter student name">
+                </div>
+
+                <div class="form-group">
+                    <label>Roll Number</label>
+                    <input type="number" id="rollNumber" placeholder="Enter roll number">
+                </div>
+
+                <div class="form-group">
+                    <label>Department</label>
+                    <input type="text" id="department" placeholder="Enter department">
+                </div>
+
+                <div class="form-group">
+                    <label>Address</label>
+                    <input type="text" id="address" placeholder="Enter address">
+                </div>
+            </div>
+
+            <div class="camera-section">
+                <h3 style="font-size: 1.1rem; margin-bottom: 4px;">Face Registration Data (5 Photos)</h3>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 16px;">
+                    Ensure adequate lighting and varied angles slightly.
+                </p>
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
+                <br>
+                <div style="margin-top: 16px;">
+                    <button class="btn btn-outline" id="captureBtn" onclick="capturePhoto()" style="max-width: 250px;">
+                        Capture Photo
+                    </button>
+                </div>
+                <p class="photo-count">Recognitions recorded: <span id="photoCount"
+                        style="font-weight: 600; color: var(--text-main);">0</span> / 5</p>
+                <div class="preview-grid" id="previewGrid"></div>
+            </div>
+
+            <button class="btn btn-success" onclick="submitRegistration()" style="margin-top: 16px;">
+                Complete Registration
+            </button>
+
+            <p class="status" id="status"></p>
+        </div>
+    </main>
+
+    <script>
+        let capturedPhotos = [];
+        const maxPhotos = 5;
+        let stream = null;
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                document.getElementById('video').srcObject = stream;
+            } catch (err) {
+                alert('Error accessing camera: ' + err.message);
+            }
+        }
+
+        function capturePhoto() {
+            if (capturedPhotos.length >= maxPhotos) {
+                alert('Maximum 5 photos already captured!');
+                return;
+            }
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+
+            const imageData = canvas.toDataURL('image/jpeg');
+            capturedPhotos.push(imageData);
+
+            const img = document.createElement('img');
+            img.src = imageData;
+            img.className = 'preview-img';
+            document.getElementById('previewGrid').appendChild(img);
+
+            document.getElementById('photoCount').textContent = capturedPhotos.length;
+
+            if (capturedPhotos.length >= maxPhotos) {
+                const btn = document.getElementById('captureBtn');
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+            }
+        }
+
+        function submitRegistration() {
+            const name = document.getElementById('studentName').value;
+            const roll = document.getElementById('rollNumber').value;
+            const dept = document.getElementById('department').value;
+            const address = document.getElementById('address').value;
+            const status = document.getElementById('status');
+
+            if (!name || !roll || !dept || !address) {
+                status.textContent = 'Please fill all fields.';
+                status.className = 'status error';
+                return;
+            }
+
+            if (capturedPhotos.length < 5) {
+                status.textContent = 'Please capture exactly 5 face samples.';
+                status.className = 'status error';
+                return;
+            }
+
+            status.textContent = 'Processing registration...';
+            status.className = 'status';
+
+            fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    roll_number: roll,
+                    department: dept,
+                    address: address,
+                    images: capturedPhotos
+                })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        status.textContent = 'Registration successful!';
+                        status.className = 'status success';
+                        setTimeout(() => window.location.href = '/admin_dashboard', 1500);
+                    } else {
+                        status.textContent = data.message || 'Registration failed.';
+                        status.className = 'status error';
+                    }
+                })
+                .catch(err => {
+                    status.textContent = 'Error: ' + err.message;
+                    status.className = 'status error';
+                });
+        }
+
+        startCamera();
+    </script>
+</body>
+
+</html>

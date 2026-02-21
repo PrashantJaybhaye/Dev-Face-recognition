@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Dashboard - FRAS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <header class="header">
+        <h1>Student Portal</h1>
+        <div class="header-actions">
+            <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
+                onclick="window.location.href='/student_logout'">
+                Sign Out
+            </button>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <div style="margin-bottom: 24px;">
+            <h2 style="font-size: 1.5rem; font-weight: 600;">Welcome, Student</h2>
+            <p style="color: var(--text-muted); margin-top: 4px;">Easily manage your attendance profile and records.</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="dash-card success" onclick="window.location.href='/attendance'">
+                <div class="icon-wrapper">📸</div>
+                <h3>Mark Attendance</h3>
+                <p>Register your presence through face recognition scan.</p>
+            </div>
+
+            <div class="dash-card primary" onclick="viewAttendance()">
+                <div class="icon-wrapper">📋</div>
+                <h3>View History</h3>
+                <p>Track your past and active attendance records instantly.</p>
+            </div>
+
+            <div class="dash-card danger" onclick="retakePhotos()">
+                <div class="icon-wrapper">🔄</div>
+                <h3>Profile Update</h3>
+                <p>Retake face sample images when requested by admin.</p>
+            </div>
+
+            <div class="dash-card secondary" onclick="window.location.href='/'">
+                <div class="icon-wrapper">🚪</div>
+                <h3>Return Home</h3>
+                <p>Navigate back to the main login prompt securely.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- View Attendance Modal -->
+    <div id="viewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Your Attendance Records</h2>
+                <button class="modal-close" onclick="closeModal('viewModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem;">
+                <div id="attendanceList" style="max-height: 300px; overflow-y: auto;">
+                    <!-- Content goes here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('viewModal')">Close Panel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function viewAttendance() {
+            fetch('/student_check_attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const list = document.getElementById('attendanceList');
+                        if (data.records.length === 0) {
+                            list.innerHTML = '<p style="color: var(--text-muted); text-align: center;">You have no attendance records yet.</p>';
+                        } else {
+                            let html = `<p style="font-size: 0.95rem; margin-bottom: 16px; font-weight: 500;">Total Registered Sessions: ${data.records.length}</p>`;
+                            data.records.forEach((r, i) => {
+                                html += `<div style="background: var(--bg-main); border: 1px solid var(--border); padding: 16px; margin-bottom: 12px; border-radius: 8px;">
+                                <div style="font-weight: 600; font-size: 0.9rem; color: var(--secondary); margin-bottom: 8px;">Session ${data.records.length - i}</div>
+                                <div style="font-size: 0.9rem; margin-bottom: 4px;"><strong>Login:</strong> ${r.login}</div>
+                                <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong> ${r.logout || 'Still logged in'}</div>
+                            </div>`;
+                            });
+                            list.innerHTML = html;
+                        }
+                        document.getElementById('viewModal').classList.add('active');
+                    }
+                });
+        }
+
+        function retakePhotos() {
+            alert('To retake your face samples, please contact the administrator for assistance.');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark Attendance - FRAS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .camera-section {
+            position: relative;
+            margin: 20px auto;
+            width: 100%;
+            max-width: 480px;
+            background: var(--bg-main);
+            padding: 16px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        #video {
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #000;
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 28px;
+            left: 28px;
+            background: rgba(15, 23, 42, 0.75);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            backdrop-filter: blur(4px);
+            font-weight: 500;
+        }
+
+        .result {
+            margin-top: 24px;
+            padding: 16px;
+            border-radius: 8px;
+            display: none;
+            border: 1px solid transparent;
+        }
+
+        .result.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .result.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .result.info {
+            background: rgba(37, 99, 235, 0.1);
+            color: var(--primary);
+            border-color: rgba(37, 99, 235, 0.3);
+        }
+
+        .loading {
+            display: none;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .spinner {
+            border: 3px solid var(--border);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .countdown {
+            font-size: 1rem;
+            color: var(--text-muted);
+            margin-top: 12px;
+            font-weight: 500;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <h1>Attendance Scanner</h1>
+        <div class="header-actions">
+            <!-- Checking if the user is an admin or student -->
+            {% if session.get('admin_logged_in') %}
+            <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
+                onclick="window.location.href='/admin_dashboard'">
+                Return to Dashboard
+            </button>
+            {% else %}
+            <button class="btn btn-outline" style="padding: 8px 16px; font-size: 0.85rem;"
+                onclick="window.location.href='/student_dashboard'">
+                Return to Portal
+            </button>
+            {% endif %}
+        </div>
+    </header>
+
+    <main class="dashboard-container auth-wrapper" style="padding-top: 2rem;">
+        <div class="auth-card" style="max-width: 600px; text-align: center;">
+            <div class="auth-header" style="margin-bottom: 20px;">
+                <h2 style="font-size: 1.5rem; font-weight: 600;">Face Recognition Tracker</h2>
+                <p>Look directly at the camera to log your daily attendance.</p>
+            </div>
+
+            <div class="camera-section">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
+                <div class="overlay" id="overlay">Align your face in the frame</div>
+            </div>
+
+            <p class="countdown" id="countdown">Initializing camera stream...</p>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 10px; color: var(--text-muted); font-size: 0.9rem;">Running face analysis...</p>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 24px;">
+                <button class="btn btn-primary" id="captureBtn" onclick="captureAndRecognize()" style="flex: 1;">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z">
+                        </path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    Capture & Verify
+                </button>
+            </div>
+
+            <div class="result" id="result"></div>
+        </div>
+    </main>
+
+    <script>
+        let stream = null;
+        let isProcessing = false;
+        // determine the correct endpoint
+        const isStudent = {{ 'true' if session.get('student_logged_in') else 'false' }};
+        const endpoint = isStudent ? '/student_recognize' : '/recognize';
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    }
+                });
+                document.getElementById('video').srcObject = stream;
+                document.getElementById('countdown').textContent = 'Camera is ready. Click "Capture & Verify"';
+            } catch (err) {
+                document.getElementById('countdown').textContent = 'Camera Error: ' + err.message;
+            }
+        }
+
+        function captureAndRecognize() {
+            if (isProcessing) return;
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+
+            const imageData = canvas.toDataURL('image/jpeg');
+
+            isProcessing = true;
+            document.getElementById('loading').style.display = 'block';
+
+            const btn = document.getElementById('captureBtn');
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('countdown').textContent = 'Verifying biometric data...';
+
+            fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    const resultDiv = document.getElementById('result');
+                    resultDiv.style.display = 'block';
+
+                    if (data.success) {
+                        let displayName = data.name || 'Student';
+                        if (data.action === 'login') {
+                            resultDiv.className = 'result success';
+                            resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">✅ Welcome!</strong>${displayName}, attendance marked for entry.`;
+                        } else if (data.action === 'logout') {
+                            resultDiv.className = 'result info';
+                            resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">👋 Goodbye!</strong>${displayName}, attendance marked for exit.`;
+                        } else if (data.action === 'already_done') {
+                            resultDiv.className = 'result info';
+                            resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">ℹ️ Notice</strong>${displayName}, attendance already completed today.`;
+                        }
+                    } else {
+                        resultDiv.className = 'result error';
+                        resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ Verification Failed</strong>${data.message || 'Face not matched. Please try again.'}`;
+                    }
+
+                    document.getElementById('countdown').textContent = 'Ready for next capture';
+                })
+                .catch(err => {
+                    const resultDiv = document.getElementById('result');
+                    resultDiv.style.display = 'block';
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ System Error</strong>${err.message}`;
+                    document.getElementById('countdown').textContent = 'A network error occurred';
+                })
+                .finally(() => {
+                    isProcessing = false;
+                    document.getElementById('loading').style.display = 'none';
+
+                    const btn = document.getElementById('captureBtn');
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                });
+        }
+
+        startCamera();
+    </script>
+</body>
+
+</html>
