@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+load_dotenv() # Load from .env by default
+load_dotenv('.env.local') # Override with .env.local if it exists
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
@@ -112,11 +115,11 @@ def setup_database():
     
     c.execute("SELECT * FROM admin WHERE username = 'admin'")
     if not c.fetchone():
-        initial_pw = os.environ.get('INITIAL_ADMIN_PASSWORD') or secrets.token_urlsafe(12)
-        with open('initial_admin_password.txt', 'w') as f:
+        initial_pw = os.environ.get('INITIAL_TEACHER_PASSWORD') or secrets.token_urlsafe(12)
+        with open('teacher_password.txt', 'w') as f:
             f.write(initial_pw)
         try:
-            os.chmod('initial_admin_password.txt', 0o600)
+            os.chmod('teacher_password.txt', 0o600)
         except Exception:
             pass
         hashed_pw = generate_password_hash(initial_pw)

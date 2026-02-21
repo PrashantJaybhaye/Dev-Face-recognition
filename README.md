@@ -1,6 +1,6 @@
 # Biometric Face Recognition Attendance System (FRAS) 📸
 
-A professional, high-end web-based attendance management system using state-of-the-art face recognition technology. This system provides a seamless experience for both administrators and students, featuring a futuristic scanner, comprehensive reporting, and a clean, modular UI.
+A professional, high-end web-based attendance management system using state-of-the-art face recognition technology. This system provides a seamless experience for both teachers and students, featuring a futuristic scanner, comprehensive reporting, and a clean, modular UI.
 
 ---
 
@@ -8,7 +8,7 @@ A professional, high-end web-based attendance management system using state-of-t
 
 ### 🔐 Multi-Role Access
 
-- **Administrator Dashboard**: Full control over student records, attendance logs, and system exports.
+- **Teacher Dashboard**: Full control over student records, attendance logs, and system exports.
 - **Student Portal**: Personal attendance history tracking and profile management.
 
 ### 🤖 Advanced Face Recognition
@@ -45,7 +45,8 @@ A professional, high-end web-based attendance management system using state-of-t
 
 ### 1. Prerequisites
 
-- Python 3.9 through 3.12 (TensorFlow compatibility).
+- **Python 3.9 through 3.12** is required for TensorFlow compatibility.
+- **Windows Users**: When installing Python, ensure you check the box **"Add Python to PATH"**.
 - A webcam or integrated laptop camera.
 
 ### 2. Clone the Repository
@@ -57,26 +58,54 @@ cd Python-Dev-Face-Recognition
 
 ### 3. Install Dependencies
 
-It is highly recommended to use a virtual environment:
+You can choose one of the following two methods:
 
-```bash
-python -m venv venv
-source venv/bin/Scripts/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+#### Option A: Direct Setup (No Virtual Environment)
+
+_Best for quick setup on a personal PC._
+
+1. Open your terminal (Command Prompt or PowerShell).
+2. Navigate to the project folder.
+3. Run the following command:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+#### Option B: Virtual Environment (Recommended)
+
+_Best for keeping your global Python installation clean._
+
+1. Open your terminal.
+2. Create and activate the environment:
+   ```bash
+   python -m venv venv
+   # On Windows (PowerShell/CMD):
+   .\venv\Scripts\activate
+   # On macOS/Linux:
+   source venv/bin/activate
+   ```
+3. Install the dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ### 4. Configuration
 
-Create a `.env` file in the root directory (refer to `.env.example`):
+The application uses environment variables for security. Rename `.env.local` to `.env` or keep it as `.env.local` (the app loads both).
+
+Ensure the following values are set:
 
 ```env
 SECRET_KEY=your_secure_flask_key
-INITIAL_ADMIN_PASSWORD=your_admin_password
+INITIAL_TEACHER_PASSWORD=your_teacher_password
 APP_DEBUG=False
 FLASK_HOST=127.0.0.1
+FLASK_PORT=5000
 ```
 
 ### 5. Running the Application
+
+Once dependencies are installed and configuration is set, start the server:
 
 ```bash
 python app.py
@@ -86,18 +115,18 @@ The application will be available at `http://127.0.0.1:5000`.
 
 ---
 
-## 🛡️ Administrative Setup
+## 🛡️ Teacher Setup
 
 ### Initial Login
 
 - **Default Username**: `admin`
 - **Password**:
-  - If you set `INITIAL_ADMIN_PASSWORD` in your `.env`, use that value.
-  - Otherwise, check the generated `initial_admin_password.txt` file in the root directory after the first launch.
+  - If you set `INITIAL_TEACHER_PASSWORD` in your `.env`, use that value.
+  - Otherwise, check the generated `teacher_password.txt` file in the root directory after the first launch.
 
 ### Student Enrollment
 
-1. Log in as Admin and navigate to **Register Student**.
+1. Log in as Teacher and navigate to **Register Student**.
 2. Enter student details (Roll Number must be unique).
 3. Capture exactly **5 face samples** at slightly different angles as prompted.
 4. Click **Complete Registration**.
