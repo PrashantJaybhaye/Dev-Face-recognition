@@ -524,14 +524,33 @@ def check_attendance():
     data = request.json
     roll_number = data.get('roll_number')
     
-    if not roll_number or not roll_number.isdigit():
-        return jsonify({'success': False, 'message': 'Invalid roll number'})
-    
-    roll_number = int(roll_number)
     conn = sqlite3.connect('studentss.db')
     c = conn.cursor()
     
-    c.execute("SELECT login_time, logout_time FROM attendance WHERE roll_number = ? ORDER BY login_time DESC", (roll_number,))
+    if not roll_number:
+        # Fetch all logs
+        c.execute("""
+            SELECT s.name, a.roll_number, a.login_time, a.logout_time, a.id
+            FROM attendance a 
+            JOIN students s ON a.roll_number = s.roll_number 
+            ORDER BY a.login_time DESC
+        """)
+        records = c.fetchall()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'name': 'All Students',
+            'is_all': True,
+            'records': [{'name': r[0], 'roll': r[1], 'login': r[2], 'logout': r[3], 'id': r[4]} for r in records]
+        })
+    
+    if not str(roll_number).isdigit():
+        conn.close()
+        return jsonify({'success': False, 'message': 'Invalid roll number'})
+    
+    roll_number = int(roll_number)
+    c.execute("SELECT login_time, logout_time, id FROM attendance WHERE roll_number = ? ORDER BY login_time DESC", (roll_number,))
     records = c.fetchall()
     
     c.execute("SELECT name FROM students WHERE roll_number = ?", (roll_number,))
@@ -542,9 +561,39 @@ def check_attendance():
         return jsonify({
             'success': True,
             'name': student[0],
-            'records': [{'login': r[0], 'logout': r[1]} for r in records]
+            'is_all': False,
+            'records': [{'login': r[0], 'logout': r[1], 'id': r[2]} for r in records]
         })
     return jsonify({'success': False, 'message': 'Student not found'})
+
+
+@app.route('/admin_manual_logout', methods=['POST'])
+def admin_manual_logout():
+    if not session.get('admin_logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'})
+    
+    data = request.json
+    attendance_id = data.get('attendance_id')
+    
+    if not attendance_id:
+        return jsonify({'success': False, 'message': 'Missing record ID'})
+    
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    try:
+        conn = sqlite3.connect('studentss.db')
+        c = conn.cursor()
+        c.execute("UPDATE attendance SET logout_time = ? WHERE id = ? AND logout_time IS NULL", (current_time, attendance_id))
+        conn.commit()
+        updated = c.rowcount > 0
+        conn.close()
+        
+        if updated:
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'message': 'Record already has logout time or not found'})
+    except Exception as e:
+        app.logger.exception("Manual logout error")
+        return jsonify({'success': False, 'message': 'Internal error'})
 
 
 @app.route('/get_student/<int:roll_number>')
@@ -602,6 +651,72 @@ def edit_student():
     except Exception as e:
         app.logger.exception("Error updating student")
         return jsonify({'success': False, 'message': 'An internal error occurred'})
+
+
+@app.route('/list_students')
+def list_students():
+    if not session.get('admin_logged_in'):
+        return jsonify({'success': False})
+    
+    conn = sqlite3.connect('studentss.db')
+    c = conn.cursor()
+    c.execute("SELECT name, roll_number, department, address FROM students ORDER BY name ASC")
+    students = c.fetchall()
+    conn.close()
+    
+    return jsonify({
+        'success': True,
+        'students': [{'name': s[0], 'roll': s[1], 'dept': s[2], 'address': s[3]} for s in students]
+    })
+
+
+@app.route('/delete_student', methods=['POST'])
+def delete_student():
+    if not session.get('admin_logged_in'):
+        return jsonify({'success': False, 'message': 'Unauthorized'})
+    
+    data = request.json
+    roll_number = data.get('roll_number')
+    
+    if not roll_number:
+        return jsonify({'success': False, 'message': 'Roll number required'})
+    
+    try:
+        conn = sqlite3.connect('studentss.db')
+        c = conn.cursor()
+        
+        # 1. Delete attendance records first (foreign key)
+        c.execute("DELETE FROM attendance WHERE roll_number = ?", (roll_number,))
+        
+        # 2. Get image folder path before deleting student record
+        c.execute("SELECT image_folder FROM students WHERE roll_number = ?", (roll_number,))
+        res = c.fetchone()
+        
+        if res:
+            image_folder = res[0]
+            # 3. Delete student record
+            c.execute("DELETE FROM students WHERE roll_number = ?", (roll_number,))
+            conn.commit()
+            
+            # 4. Remove image files and folder
+            if os.path.exists(image_folder):
+                import shutil
+                shutil.rmtree(image_folder)
+                
+            # 5. Clear cache
+            with known_embeddings_cache_lock:
+                if int(roll_number) in known_embeddings_cache:
+                    del known_embeddings_cache[int(roll_number)]
+                    
+            conn.close()
+            return jsonify({'success': True})
+        
+        conn.close()
+        return jsonify({'success': False, 'message': 'Student not found'})
+        
+    except Exception as e:
+        app.logger.exception("Delete student error")
+        return jsonify({'success': False, 'message': 'Internal error occurred'})
 
 
 @app.route('/export_pdf')

@@ -35,11 +35,11 @@
                 <p>Add a new student profile and face data to the system.</p>
             </button>
 
-            <button class="dash-card primary" onclick="openModal('editModal')"
+            <button class="dash-card primary" onclick="openModal('editModal'); listStudents();"
                 style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">✏️</div>
                 <h3>Edit Records</h3>
-                <p>Modify existing student details such as address or department.</p>
+                <p>Add, update, or remove student profiles from the system database.</p>
             </button>
 
             <button class="dash-card primary" onclick="window.location.href='/attendance'"
@@ -49,7 +49,7 @@
                 <p>Launch the real-time face recognition attendance scanner.</p>
             </button>
 
-            <button class="dash-card primary" onclick="openModal('checkModal')"
+            <button class="dash-card primary" onclick="openModal('checkModal'); checkAttendance();"
                 style="width: 100%; text-align: center; font-family: inherit;">
                 <div class="icon-wrapper">📋</div>
                 <h3>View Logs</h3>
@@ -74,18 +74,31 @@
 
     <!-- Edit Modal -->
     <div id="editModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
-                <h2>Edit Student Data</h2>
+                <h2>Manage Students</h2>
                 <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label>Roll Number</label>
-                    <input type="number" id="editRoll" placeholder="Search by roll number">
+                <!-- Search Bar -->
+                <div
+                    style="background: var(--bg-main); padding: 12px; border-radius: 10px; margin-bottom: 20px; border: 1px solid var(--border);">
+                    <input type="number" id="editRollSearch" placeholder="Jump to Roll Number"
+                        style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px;"
+                        oninput="filterStudents()">
                 </div>
 
-                <div id="editFields" style="display: none; margin-top: 20px;">
+                <!-- Student List Area -->
+                <div id="studentListArea" style="margin-bottom: 20px;"></div>
+
+                <!-- Form Area (Hidden by default) -->
+                <div id="editFormArea" style="display: none; border-top: 2px solid var(--border); padding-top: 20px;">
+                    <h3 style="font-size: 1rem; margin-bottom: 15px; color: var(--primary);">Update Student Profile</h3>
+                    <div class="form-group">
+                        <label>Roll Number (Locked)</label>
+                        <input type="number" id="editRoll" readonly
+                            style="background: var(--bg-main); cursor: not-allowed;">
+                    </div>
                     <div class="form-group">
                         <label>Full Name</label>
                         <input type="text" id="editName" placeholder="Student Name">
@@ -98,15 +111,15 @@
                         <label>Address</label>
                         <input type="text" id="editAddress" placeholder="Home Address">
                     </div>
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button class="btn btn-outline" style="flex: 1;" onclick="hideEditForm()">Back to List</button>
+                        <button class="btn btn-success" style="flex: 2;" onclick="saveStudent()">Save Changes</button>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer" id="loadButtons">
-                <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel</button>
-                <button class="btn btn-primary" onclick="loadStudent()">Fetch Details</button>
-            </div>
-            <div class="modal-footer" id="saveButtons" style="display: none;">
-                <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel Registration</button>
-                <button class="btn btn-success" onclick="saveStudent()">Save Changes</button>
+            <div class="modal-footer">
+                <button class="btn btn-outline" style="width: 100%;" onclick="closeModal('editModal')">Close
+                    Directory</button>
             </div>
         </div>
     </div>
@@ -119,16 +132,20 @@
                 <button class="modal-close" onclick="closeModal('checkModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label>Roll Number</label>
-                    <input type="number" id="checkRoll" placeholder="Enter student roll number">
+                <div
+                    style="background: var(--bg-main); padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid var(--border);">
+                    <div style="display: flex; gap: 10px;">
+                        <input type="number" id="checkRoll" placeholder="Search Roll Number"
+                            style="flex: 1; padding: 10px 15px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem;">
+                        <button class="btn btn-primary" onclick="checkAttendance(false)"
+                            style="width: auto; padding: 0 20px; font-size: 0.85rem;">Search</button>
+                    </div>
                 </div>
-
-                <div id="attendanceResult" style="margin-top: 20px; max-height: 300px; overflow-y: auto;"></div>
+                <div id="attendanceResult" style="padding-right: 5px;"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline" onclick="closeModal('checkModal')">Close</button>
-                <button class="btn btn-primary" onclick="checkAttendance()">View Records</button>
+                <button class="btn btn-primary" style="width: 100%;" onclick="closeModal('checkModal')">Close
+                    View</button>
             </div>
         </div>
     </div>
@@ -157,44 +174,109 @@
                 if (document.getElementById('editStatus')) document.getElementById('editStatus').textContent = '';
             }
             if (id === 'checkModal') {
-                document.getElementById('checkRoll').value = '';
                 document.getElementById('attendanceResult').innerHTML = '';
             }
         }
 
-        function loadStudent() {
-            const roll = document.getElementById('editRoll').value;
-            const statusNode = document.getElementById('editStatus') || createStatusNode('editRoll');
+        let cachedStudents = [];
 
-            if (!roll) {
-                statusNode.textContent = 'Please enter a valid roll number.';
-                statusNode.className = 'status error';
-                return;
-            }
+        function listStudents() {
+            const listArea = document.getElementById('studentListArea');
+            listArea.innerHTML = '<p class="status">Loading student directory...</p>';
+            document.getElementById('editFormArea').style.display = 'none';
 
-            statusNode.textContent = 'Fetching details...';
-            statusNode.className = 'status';
-
-            fetch('/get_student/' + encodeURIComponent(roll))
+            fetch('/list_students')
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-                        statusNode.textContent = '';
-                        document.getElementById('editName').value = data.student.name;
-                        document.getElementById('editDept').value = data.student.department;
-                        document.getElementById('editAddress').value = data.student.address;
-                        document.getElementById('editFields').style.display = 'block';
-                        document.getElementById('loadButtons').style.display = 'none';
-                        document.getElementById('saveButtons').style.display = 'flex';
+                        cachedStudents = data.students;
+                        renderStudentList(data.students);
                     } else {
-                        statusNode.textContent = 'Student profile not found.';
-                        statusNode.className = 'status error';
+                        listArea.innerHTML = '<p class="status error">Failed to load directory.</p>';
                     }
                 })
                 .catch(() => {
-                    statusNode.textContent = 'Network error fetching data.';
-                    statusNode.className = 'status error';
+                    listArea.innerHTML = '<p class="status error">Network error loading students.</p>';
                 });
+        }
+
+        function renderStudentList(students) {
+            const listArea = document.getElementById('studentListArea');
+            if (students.length === 0) {
+                listArea.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">No students registered yet.</p>';
+                return;
+            }
+
+            let html = '';
+            students.forEach(s => {
+                html += `
+                <div style="background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px 15px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 15px;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: 700; color: var(--text-main); font-size: 0.9rem;">${escapeHtml(s.name)}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Roll: ${s.roll} • ${escapeHtml(s.dept)}</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="startEdit(${s.roll}, '${escapeHtml(s.name)}', '${escapeHtml(s.dept)}', '${escapeHtml(s.address)}')" 
+                                style="background: rgba(37,99,235,0.1); color: var(--primary); border: none; padding: 6px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; cursor: pointer;">
+                            EDIT
+                        </button>
+                        <button onclick="deleteStudent(${s.roll})" 
+                                style="background: rgba(239,68,68,0.1); color: var(--danger); border: none; padding: 6px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; cursor: pointer;">
+                            DEL
+                        </button>
+                    </div>
+                </div>`;
+            });
+            listArea.innerHTML = html;
+        }
+
+        function filterStudents() {
+            const query = document.getElementById('editRollSearch').value;
+            if (!query) {
+                renderStudentList(cachedStudents);
+                return;
+            }
+            const filtered = cachedStudents.filter(s => s.roll.toString().includes(query));
+            renderStudentList(filtered);
+        }
+
+        function startEdit(roll, name, dept, address) {
+            document.getElementById('studentListArea').style.display = 'none';
+            document.getElementById('editRollSearch').parentElement.style.display = 'none';
+            document.getElementById('editFormArea').style.display = 'block';
+
+            document.getElementById('editRoll').value = roll;
+            document.getElementById('editName').value = name;
+            document.getElementById('editDept').value = dept;
+            document.getElementById('editAddress').value = address;
+        }
+
+        function hideEditForm() {
+            document.getElementById('studentListArea').style.display = 'block';
+            document.getElementById('editRollSearch').parentElement.style.display = 'block';
+            document.getElementById('editFormArea').style.display = 'none';
+        }
+
+        function deleteStudent(roll) {
+            if (!confirm(`Are you sure you want to PERMANENTLY delete student Roll #${roll}? This will remove all their face data and attendance logs.`)) return;
+
+            fetch('/delete_student', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ roll_number: roll })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        listStudents();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(() => alert('Network error during deletion.'));
         }
 
         function saveStudent() {
@@ -202,10 +284,6 @@
             const name = document.getElementById('editName').value;
             const dept = document.getElementById('editDept').value;
             const address = document.getElementById('editAddress').value;
-            const statusNode = document.getElementById('editStatus') || createStatusNode('editRoll');
-
-            statusNode.textContent = 'Saving changes...';
-            statusNode.className = 'status';
 
             fetch('/edit_student', {
                 method: 'POST', headers: {
@@ -217,31 +295,48 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-                        statusNode.textContent = 'Profile updated successfully!';
-                        statusNode.className = 'status success';
-                        setTimeout(() => closeModal('editModal'), 1500);
+                        alert('Profile updated successfully!');
+                        hideEditForm();
+                        listStudents();
                     }
                     else {
-                        statusNode.textContent = 'Error: ' + data.message;
-                        statusNode.className = 'status error';
+                        alert('Error: ' + data.message);
                     }
                 })
                 .catch(() => {
-                    statusNode.textContent = 'Network error saving data.';
-                    statusNode.className = 'status error';
+                    alert('Network error saving data.');
                 });
         }
 
-        function checkAttendance() {
-            const roll = document.getElementById('checkRoll').value;
+        const formatDate = (dateStr) => {
+            if (!dateStr || dateStr === 'Active') return dateStr;
+            try {
+                const date = new Date(dateStr.replace(' ', 'T'));
+                if (isNaN(date.getTime())) return dateStr;
+                return date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            } catch (e) { return dateStr; }
+        };
+
+        function checkAttendance(viewAll = true) {
+            const rollInput = document.getElementById('checkRoll');
+            const roll = viewAll ? "" : rollInput.value;
             const resultDiv = document.getElementById('attendanceResult');
 
-            if (!roll) {
-                resultDiv.innerHTML = '<p class="status error">Please enter a valid roll number.</p>';
+            if (!viewAll && !roll) {
+                alert('Please enter a roll number to search.');
                 return;
             }
 
-            resultDiv.innerHTML = '<p class="status">Loading records...</p>';
+            resultDiv.innerHTML = `<div class="status" style="display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text-muted);">
+                <span style="margin-right: 10px;">⌛</span> Loading records...
+            </div>`;
 
             fetch('/check_attendance', {
                 method: 'POST', headers: {
@@ -254,28 +349,105 @@
                 .then(data => {
                     if (data.success) {
                         if (data.records.length === 0) {
-                            resultDiv.innerHTML = '<p style="color: var(--text-muted);">No attendance records found.</p>';
+                            resultDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted); font-size: 0.9rem;">No attendance records found for this query.</div>';
                             return;
                         }
-                        let html = `<h3 style="color: var(--primary); margin-bottom: 8px; font-size: 1.1rem;">${escapeHtml(data.name)}</h3>`;
-                        html += `<p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px;">Total Records: ${data.records.length}</p>`;
-                        data.records.forEach((r, i) => {
-                            let safeLogin = escapeHtml(r.login);
-                            let safeLogout = escapeHtml(r.logout || 'Active');
-                            html += `<div style="background: var(--bg-main); padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border);">
-                            <div style="font-weight: 600; font-size: 0.85rem; color: var(--secondary); margin-bottom: 4px;">Session ${data.records.length - i}</div>
-                            <div style="font-size: 0.9rem;"><strong>Login:</strong> ${safeLogin}</div>
-                            <div style="font-size: 0.9rem; color: ${r.logout ? 'inherit' : 'var(--danger)'};"><strong>Logout:</strong> ${safeLogout}</div>
+
+                        let html = `
+                        <div style="background: #ffffff; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow);">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="width: 40px; height: 40px; background: rgba(37, 99, 235, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 1.1rem;">📊</div>
+                                <div>
+                                    <h3 style="font-size: 1rem; font-weight: 700; color: var(--text-main); line-height: 1.2;">${escapeHtml(data.name)}</h3>
+                                    <p style="color: var(--text-muted); font-size: 0.75rem; font-weight: 500;">Attendance History</p>
+                                </div>
+                            </div>
+                            <div style="background: var(--bg-main); padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border);">
+                                <span style="font-size: 0.7rem; font-weight: 700; color: var(--primary); text-transform: uppercase;">${data.records.length} Logs</span>
+                            </div>
                         </div>`;
+
+                        data.records.forEach((r, i) => {
+                            let safeLogin = formatDate(r.login);
+                            let safeLogout = r.logout ? formatDate(r.logout) : 'Active';
+                            let displayHeader = data.is_all ? `${escapeHtml(r.name)}` : `Session #${r.id}`;
+                            let isActive = !r.logout;
+
+                            html += `
+                            <div style="display: flex; gap: 12px; margin-bottom: 2px; position: relative;">
+                                <div style="display: flex; flex-direction: column; align-items: center; width: 20px;">
+                                    <div style="width: 8px; height: 8px; border-radius: 50%; background: ${isActive ? 'var(--danger)' : 'var(--success)'}; z-index: 2; margin-top: 6px;"></div>
+                                    <div style="width: 1px; flex: 1; background: var(--border); margin: 4px 0;"></div>
+                                </div>
+                                
+                                <div style="flex: 1; background: #fff; padding: 12px 15px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;">
+                                    <div style="flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <span style="font-weight: 700; color: var(--text-main); font-size: 0.9rem;">${displayHeader}</span>
+                                            ${(data.is_all || !data.is_all) && r.roll ? `<span style="font-size: 0.65rem; color: var(--text-muted); background: var(--bg-main); padding: 1px 5px; border-radius: 4px; font-weight: 600;">Roll: ${r.roll}</span>` : ''}
+                                        </div>
+                                        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--text-muted); font-size: 0.8rem;">
+                                            <div style="display: flex; align-items: center; gap: 4px;">
+                                                <span style="opacity: 0.6; font-size: 0.65rem; font-weight: 700;">IN</span>
+                                                <span style="font-weight: 500; color: var(--secondary);">${safeLogin}</span>
+                                            </div>
+                                            <div style="width: 1px; height: 8px; background: var(--border);"></div>
+                                            <div style="display: flex; align-items: center; gap: 4px;">
+                                                <span style="opacity: 0.6; font-size: 0.65rem; font-weight: 700;">OUT</span>
+                                                <span style="font-weight: 500; color: ${isActive ? 'var(--danger)' : 'var(--secondary)'};">${safeLogout}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        ${isActive ? `
+                                            <button onclick="adminManualLogout(${r.id})" style="background: rgba(239, 68, 68, 0.05); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); padding: 5px 12px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                                                LOGOUT
+                                            </button>
+                                        ` : `
+                                            <div style="color: var(--success); font-weight: 700; font-size: 0.65rem; display: flex; align-items: center; gap: 4px;">
+                                                DONE
+                                            </div>
+                                        `}
+                                    </div>
+                                </div>
+                            </div>`;
                         });
                         resultDiv.innerHTML = html;
+
+                        if (!viewAll) {
+                            // Focus back to search for ease of use
+                            rollInput.select();
+                        }
                     } else {
-                        resultDiv.innerHTML = `<p class="status error">${escapeHtml(data.message)}</p>`;
+                        resultDiv.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--danger); font-size: 0.9rem;">${escapeHtml(data.message)}</div>`;
                     }
                 })
                 .catch(() => {
-                    resultDiv.innerHTML = '<p class="status error">Network error fetching records.</p>';
+                    resultDiv.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--danger); font-size: 0.9rem;">Network error connection.</div>';
                 });
+        }
+
+        function adminManualLogout(id) {
+            if (!confirm('Are you sure you want to manually mark this student as logged out?')) return;
+
+            fetch('/admin_manual_logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ attendance_id: id })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        checkAttendance();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(() => alert('Network error performing manual logout.'));
         }
 
         // Helper func to inject a status node dynamically under an input
