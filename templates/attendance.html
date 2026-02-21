@@ -158,6 +158,19 @@
             </div>
 
             <div class="result" id="result"></div>
+
+            <div id="successActions" style="display: none; margin-top: 16px;">
+                {% if session.get('admin_logged_in') %}
+                <button class="btn btn-outline" style="width: 100%;" onclick="window.location.href='/admin_dashboard'">
+                    Back to Admin Dashboard
+                </button>
+                {% else %}
+                <button class="btn btn-outline" style="width: 100%;"
+                    onclick="window.location.href='/student_dashboard'">
+                    Back to Student Portal
+                </button>
+                {% endif %}
+            </div>
         </div>
     </main>
 
@@ -215,6 +228,7 @@
                 .then(r => r.json())
                 .then(data => {
                     const resultDiv = document.getElementById('result');
+                    const successActions = document.getElementById('successActions');
                     resultDiv.style.display = 'block';
 
                     if (data.success) {
@@ -229,18 +243,22 @@
                             resultDiv.className = 'result info';
                             resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">ℹ️ Notice</strong>${displayName}, attendance already completed today.`;
                         }
+                        successActions.style.display = 'block';
                     } else {
                         resultDiv.className = 'result error';
                         resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ Verification Failed</strong>${data.message || 'Face not matched. Please try again.'}`;
+                        successActions.style.display = 'none';
                     }
 
                     document.getElementById('countdown').textContent = 'Ready for next capture';
                 })
                 .catch(err => {
                     const resultDiv = document.getElementById('result');
+                    const successActions = document.getElementById('successActions');
                     resultDiv.style.display = 'block';
                     resultDiv.className = 'result error';
                     resultDiv.innerHTML = `<strong style="font-size: 1.1rem; display: block; margin-bottom: 4px;">❌ System Error</strong>${err.message}`;
+                    successActions.style.display = 'none';
                     document.getElementById('countdown').textContent = 'A network error occurred';
                 })
                 .finally(() => {

@@ -16,9 +16,39 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import Paragraph, Spacer
 from reportlab.lib.units import inch
+import numpy as np
 
 app = Flask(__name__)
 app.secret_key = 'fras_secret_key_2024'
+
+known_embeddings_cache = {}
+
+def get_student_embeddings(roll_number, image_folder):
+    if roll_number in known_embeddings_cache:
+        return known_embeddings_cache[roll_number]
+    
+    embeddings = []
+    if os.path.exists(image_folder):
+        for img_file in os.listdir(image_folder):
+            img_path = os.path.join(image_folder, img_file)
+            try:
+                reps = DeepFace.represent(img_path=img_path, model_name="Facenet", enforce_detection=False)
+                if len(reps) > 0:
+                    embeddings.append(reps[0]['embedding'])
+            except:
+                pass
+    known_embeddings_cache[roll_number] = embeddings
+    return embeddings
+
+def cosine_distance(source_rep, test_rep):
+    if isinstance(source_rep, list):
+        source_rep = np.array(source_rep)
+    if isinstance(test_rep, list):
+        test_rep = np.array(test_rep)
+    a = np.matmul(np.transpose(source_rep), test_rep)
+    b = np.sum(np.multiply(source_rep, source_rep))
+    c = np.sum(np.multiply(test_rep, test_rep))
+    return 1 - (a / (np.sqrt(b) * np.sqrt(c)))
 
 def setup_database():
     conn = sqlite3.connect('studentss.db')
@@ -182,6 +212,9 @@ def register_student():
     conn.commit()
     conn.close()
     
+    if roll_number in known_embeddings_cache:
+        del known_embeddings_cache[roll_number]
+    
     return jsonify({'success': True, 'message': 'Registration successful!'})
 
 
@@ -211,6 +244,13 @@ def recognize_face():
         f.write(img_bytes)
     
     try:
+        captured_reps = DeepFace.represent(img_path=captured_image_path, model_name="Facenet", enforce_detection=False)
+        if not captured_reps:
+            os.remove(captured_image_path)
+            return jsonify({'success': False, 'message': 'No face detected in the given image'})
+            
+        captured_embedding = captured_reps[0]['embedding']
+        
         conn = sqlite3.connect('studentss.db')
         c = conn.cursor()
         c.execute("SELECT name, roll_number, image_folder FROM students")
@@ -221,37 +261,23 @@ def recognize_face():
         for student in students:
             name, roll_number, image_folder = student
             
-            if not os.path.exists(image_folder):
+            student_embeddings = get_student_embeddings(roll_number, image_folder)
+            
+            if not student_embeddings:
                 continue
             
             student_matches = 0
             student_distances = []
             
-            for img_file in os.listdir(image_folder):
-                img_path = os.path.join(image_folder, img_file)
-                try:
-                    result = DeepFace.verify(
-                        img1_path=captured_image_path,
-                        img2_path=img_path,
-                        model_name="Facenet",
-                        distance_metric="cosine",
-                        enforce_detection=False,
-                        threshold=0.45
-                    )
-                    
-                    distance = result.get('distance', 1.0)
-                    student_distances.append(distance)
-                    
-                    if result.get('verified'):
-                        student_matches += 1
-                        
-                except Exception as e:
-                    continue
+            for emb in student_embeddings:
+                dist = cosine_distance(captured_embedding, emb)
+                if dist <= 0.40:
+                    student_matches += 1
+                    student_distances.append(dist)
             
-            if student_matches >= 2:
-                avg_distance = sum(student_distances) / len(student_distances) if student_distances else 1.0
-                if avg_distance < 0.4:
-                    valid_matches.append((avg_distance, name, roll_number))
+            if student_matches >= 1:
+                avg_distance = sum(student_distances) / len(student_distances)
+                valid_matches.append((avg_distance, name, roll_number))
         
         if valid_matches:
             # Sort by lowest average distance
@@ -268,21 +294,25 @@ def recognize_face():
                     c.execute("UPDATE attendance SET logout_time = ? WHERE id = ?", (current_time, record[0]))
                     conn.commit()
                     conn.close()
-                    os.remove(captured_image_path)
+                    if os.path.exists(captured_image_path):
+                        os.remove(captured_image_path)
                     return jsonify({'success': True, 'action': 'logout', 'name': name})
                 else:
                     conn.close()
-                    os.remove(captured_image_path)
+                    if os.path.exists(captured_image_path):
+                        os.remove(captured_image_path)
                     return jsonify({'success': True, 'action': 'already_done', 'name': name})
             else:
                 c.execute("INSERT INTO attendance (roll_number, login_time) VALUES (?, ?)", (roll_number, current_time))
                 conn.commit()
                 conn.close()
-                os.remove(captured_image_path)
+                if os.path.exists(captured_image_path):
+                    os.remove(captured_image_path)
                 return jsonify({'success': True, 'action': 'login', 'name': name})
         else:
             conn.close()
-            os.remove(captured_image_path)
+            if os.path.exists(captured_image_path):
+                os.remove(captured_image_path)
             return jsonify({'success': False, 'message': 'No match found'})
             
     except Exception as e:
@@ -314,6 +344,13 @@ def student_recognize():
         f.write(img_bytes)
     
     try:
+        captured_reps = DeepFace.represent(img_path=captured_image_path, model_name="Facenet", enforce_detection=False)
+        if not captured_reps:
+            os.remove(captured_image_path)
+            return jsonify({'success': False, 'message': 'No face detected in the image'})
+            
+        captured_embedding = captured_reps[0]['embedding']
+        
         conn = sqlite3.connect('studentss.db')
         c = conn.cursor()
         c.execute("SELECT image_folder FROM students WHERE roll_number = ?", (roll_number,))
@@ -321,28 +358,19 @@ def student_recognize():
         
         if not result:
             conn.close()
-            os.remove(captured_image_path)
+            if os.path.exists(captured_image_path):
+                os.remove(captured_image_path)
             return jsonify({'success': False, 'message': 'Student not found'})
         
         image_folder = result[0]
-        matches = 0
+        student_embeddings = get_student_embeddings(roll_number, image_folder)
         
-        for img_file in os.listdir(image_folder):
-            img_path = os.path.join(image_folder, img_file)
-            try:
-                verify_result = DeepFace.verify(
-                    img1_path=captured_image_path,
-                    img2_path=img_path,
-                    model_name="Facenet",
-                    distance_metric="cosine",
-                    enforce_detection=False,
-                    threshold=0.45
-                )
-                
-                if verify_result.get('verified'):
+        matches = 0
+        if student_embeddings:
+            for emb in student_embeddings:
+                dist = cosine_distance(captured_embedding, emb)
+                if dist <= 0.40:
                     matches += 1
-            except:
-                continue
         
         if os.path.exists(captured_image_path):
             os.remove(captured_image_path)
